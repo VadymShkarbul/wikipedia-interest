@@ -1,0 +1,6 @@
+# Skill dependencies (for pip users). The project itself uses uv (pyproject.toml / uv.lock),
+# and scripts/wikipop.py also carries PEP 723 inline metadata so `uv run` auto-installs these.
+requests>=2.31
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7

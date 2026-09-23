@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Virtual environments (recreate with `uv sync`)
+.venv/
+venv/
+
+# uv
+.python-version
+
+# Skill runtime artifacts
+.wikipop_cache/
+report.pdf
+report.png
+verify_report.pdf
+verify_report.png
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
