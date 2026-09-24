@@ -31,8 +31,12 @@ AGGREGATE_URL = (
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 DATA_START = "20150701"  # Wikimedia pageview history begins here
 # Cache next to this module, not in the caller's cwd: the agent's working directory is not ours
-# to litter, and it varies between clients. Override with --cache-dir / cache_dir.
-DEFAULT_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".wikipop_cache")
+# to litter, and it varies between clients. Override with --cache-dir, the cache_dir argument, or
+# WIKIPOP_CACHE_DIR (the MCP server takes no CLI flags, so it needs the env route).
+DEFAULT_CACHE_DIR = os.environ.get(
+    "WIKIPOP_CACHE_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".wikipop_cache"),
+)
 # A descriptive UA is required by the Wikimedia API policy. Override via env if desired.
 USER_AGENT = os.environ.get(
     "WIKI_UA",

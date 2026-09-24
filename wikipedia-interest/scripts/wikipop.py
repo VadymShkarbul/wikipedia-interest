@@ -55,14 +55,19 @@ def _shift_back(d: "dt.date", n: int, unit: str) -> "dt.date":
     return dt.date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
-def _period(args) -> tuple[str, str, str]:
-    """Resolve (start_YYYYMMDD, end_YYYYMMDD, label) from --last or --start/--end."""
-    if args.start and args.end:
-        return args.start, args.end, f"{args.start}–{args.end}"
-    last = args.last or "2y"
+def resolve_window(last: "str | None", start: "str | None", end: "str | None",
+                   granularity: str = "monthly") -> tuple[str, str, str]:
+    """(start_YYYYMMDD, end_YYYYMMDD, label) from a `--last`-style window or an explicit range.
+
+    Shared by the CLI and the MCP server so both snap monthly windows identically.
+    Raises ValueError on a malformed window; callers turn that into their own error shape.
+    """
+    if start and end:
+        return start, end, f"{start}–{end}"
+    last = last or "2y"
     m = re.fullmatch(r"(\d+)\s*([ymd])", last.strip().lower())
     if not m:
-        _fail(f"bad --last '{last}', use e.g. 2y, 24m, 90d")
+        raise ValueError(f"bad window '{last}', use e.g. 2y, 24m, 90d")
     n, unit = int(m.group(1)), m.group(2)
     end = dt.date.today()
     start = _shift_back(end, n, unit)
@@ -70,11 +75,20 @@ def _period(args) -> tuple[str, str, str]:
     # from the start date), which understates the baseline that growth_pct and yoy_pct measure
     # against. Snap to the 1st so `--last 2y` means the last 2 years of *complete* months; the
     # trailing partial month is dropped separately by trim_partial_tail.
-    if getattr(args, "granularity", "monthly") == "monthly":
+    if granularity == "monthly":
         start = start.replace(day=1)
     if start < dt.date(2015, 7, 1):
         start = dt.date(2015, 7, 1)
     return start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), f"last {last}"
+
+
+def _period(args) -> tuple[str, str, str]:
+    """CLI adapter over resolve_window: turns a bad window into the JSON error contract."""
+    try:
+        return resolve_window(args.last, args.start, args.end,
+                              getattr(args, "granularity", "monthly"))
+    except ValueError as exc:
+        _fail(str(exc))
 
 
 def _build_series(topic, langs, start, end, granularity, access, agent, cache_dir,
