@@ -129,6 +129,10 @@ def build_report(
     end: Ymd = None,
     granularity: Literal["monthly", "daily"] = "monthly",
     normalize: bool = False,
+    check_bots: Annotated[bool, Field(description=(
+        "Also fetch all-agents traffic and report the non-human share. Pass the same value you "
+        "used for analyze_interest: a high bot share lowers confidence, and the report should "
+        "carry the same caveat your analysis did."))] = False,
     out_path: Annotated[Optional[str], Field(
         default=None,
         description="Where to write the .html file. Defaults to report.html in the working "
@@ -138,7 +142,7 @@ def build_report(
     s, e, label = _window(window, start, end, granularity)
     series, resolved = wikipop._build_series(
         topic, langs, s, e, granularity, "all-access", "user", W.DEFAULT_CACHE_DIR,
-        qid=qid, normalize=normalize, check_bots=False)
+        qid=qid, normalize=normalize, check_bots=check_bots)
     out = os.path.abspath(out_path or "report.html")
     files = R.build_report(topic, label, series, out, findings=findings, normalized=normalize)
     return {"topic": topic, "period": label, "files": {"html": files["html"]},

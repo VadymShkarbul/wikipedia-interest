@@ -63,6 +63,26 @@ def test_tools_are_exposed_with_honest_annotations(warm_cache, tmp_path):
     assert "findings" in (tools["build_report"].input_schema.get("required") or [])
 
 
+def test_report_tool_exposes_the_same_analysis_knobs_as_analyze(warm_cache, tmp_path):
+    """Both tools drive one engine, so a knob that changes the numbers must exist on both.
+
+    `check_bots` was missing from build_report, which silently mattered: a high bot share lowers
+    `confidence`, so a crawler-heavy topic could analyze as medium and then be written into the
+    shared report as high — the caveat dropped out of the artifact that travels.
+    """
+    if warm_cache is None:
+        pytest.skip("no recorded fixtures")
+
+    async def go(s):
+        return await s.list_tools()
+
+    tools = {t.name: t for t in _drive(go, warm_cache, tmp_path).tools}
+    analyze = set(tools["analyze_interest"].input_schema.get("properties") or {})
+    report = set(tools["build_report"].input_schema.get("properties") or {})
+    missing = analyze - report
+    assert not missing, f"build_report is missing analysis knobs: {sorted(missing)}"
+
+
 def test_analyze_matches_the_cli_golden(warm_cache, tmp_path):
     """Same numbers through the typed tool as through the CLI — one engine, two front doors."""
     if warm_cache is None:

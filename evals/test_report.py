@@ -113,6 +113,76 @@ def test_html_escapes_markup_in_titles(tmp_path):
     assert "&lt;script&gt;" in text
 
 
+def test_legend_names_every_edition(tmp_path):
+    """The legend used to be laid out inside the SVG with a 6px-per-character width estimate.
+
+    Past three editions it ran off the fixed viewBox, which SVG clips, so editions disappeared
+    from the key while their lines stayed on the chart — worst in exactly the multi-edition
+    comparison this skill exists for (examples.md ships a six-edition case).
+    """
+    titles = {"en": "English language", "pl": "Język angielski", "uk": "Англійська мова",
+              "cs": "Angličtina", "de": "Englische Sprache", "es": "Idioma inglés"}
+    entries = [_series_entry(lang, title, list(range(300, 300 + 24 * 10, 10)))
+               for lang, title in titles.items()]
+    out = tmp_path / "six.html"
+    reporting.build_report("English language", "last 3y", entries, str(out))
+    text = out.read_text(encoding="utf-8")
+
+    legend = text.split('<ul class="legend">')[1].split("</ul>")[0]
+    for lang, title in titles.items():
+        assert f"{lang}: {title}" in legend, f"{lang} missing from the legend"
+    # one swatch per edition, and the palette must not repeat inside a single chart
+    assert legend.count('class="swatch"') == len(titles)
+    colours = [seg.split('"')[0] for seg in legend.split("background:")[1:]]
+    assert len(set(colours)) == len(titles), f"colours collide: {colours}"
+
+
+def test_nothing_is_drawn_outside_the_viewbox(tmp_path):
+    """Content positioned past the viewBox is silently clipped, not visibly broken.
+
+    This is the guard the string assertions above cannot give: the old legend's text WAS present
+    in the markup, just at x=844 in a 470-wide viewBox, so searching the HTML for an edition name
+    found it while the reader saw nothing. Check geometry, not substrings.
+    """
+    import re
+
+    titles = {"en": "English language", "pl": "Język angielski", "uk": "Англійська мова",
+              "cs": "Angličtina", "de": "Englische Sprache", "es": "Idioma inglés"}
+    entries = [_series_entry(lang, title, list(range(300, 300 + 24 * 10, 10)))
+               for lang, title in titles.items()]
+    out = tmp_path / "bounds.html"
+    reporting.build_report("English language", "last 3y", entries, str(out))
+    text = out.read_text(encoding="utf-8")
+
+    for chart in text.split("<svg")[1:]:
+        chart = chart.split("</svg>")[0]
+        vb_w, vb_h = (float(v) for v in re.search(
+            r'viewBox="0 0 ([\d.]+) ([\d.]+)"', chart).groups())
+        for attr, limit in (("x", vb_w), ("x1", vb_w), ("x2", vb_w), ("cx", vb_w),
+                            ("y", vb_h), ("y1", vb_h), ("y2", vb_h), ("cy", vb_h)):
+            for raw in re.findall(rf'\b{attr}="(-?[\d.]+)"', chart):
+                assert -1 <= float(raw) <= limit + 1, (
+                    f"{attr}={raw} is outside the {vb_w}x{vb_h} viewBox and will be clipped")
+
+
+def test_legend_colours_match_the_plotted_lines(tmp_path):
+    """Chart and legend are rendered separately now, so their colour order must stay in step."""
+    entries = [_series_entry("uk", "A", list(range(300, 300 + 24 * 10, 10))),
+               _series_entry("xx", None, [], found=False),          # gap: drawn by neither
+               _series_entry("pl", "B", list(range(500, 500 + 24 * 8, 8)))]
+    out = tmp_path / "order.html"
+    reporting.build_report("t", "last 2y", entries, str(out))
+    text = out.read_text(encoding="utf-8")
+
+    chart = text.split("<svg")[1].split("</svg>")[0]
+    line_colours = [seg.split('"')[0] for seg in chart.split('stroke="')[1:] if seg.startswith("#")]
+    legend = text.split('<ul class="legend">')[1].split("</ul>")[0]
+    legend_colours = [seg.split('"')[0] for seg in legend.split("background:")[1:]]
+    # the gap edition contributes to neither, and the two that do plot keep the same order
+    assert legend_colours == reporting.PALETTE[:2]
+    assert line_colours[:2] == legend_colours
+
+
 def test_build_report_handles_gap_only_without_crashing(tmp_path):
     out = tmp_path / "gap.html"
     reporting.build_report("nothing", "last 2y", [_series_entry("xx", None, [], found=False)], str(out))

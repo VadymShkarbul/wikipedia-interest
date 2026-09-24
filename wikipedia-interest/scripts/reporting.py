@@ -83,26 +83,61 @@ def _fmt_count(v: float) -> str:
     return f"{v:.0f}"
 
 
+def _drawn(series_list: list) -> list:
+    """The series that actually have data, each paired with its palette colour.
+
+    One function so the chart and the legend can never disagree about which colour belongs to
+    which edition — they are rendered separately, but both index off this list.
+    """
+    out = []
+    for s in series_list:
+        d = s.get("data")
+        if d is None or d.empty:
+            continue
+        out.append((s, d, PALETTE[len(out) % len(PALETTE)]))
+    return out
+
+
+def _legend_html(series_list: list, indexed: bool) -> str:
+    """The chart legend, as HTML rather than SVG.
+
+    It used to be laid out inside the SVG by estimating text width at 6px per character. That
+    estimate cannot be right: a static generator has no way to measure rendered text (SVG's
+    getComputedTextLength needs a DOM), and the error compounds per entry — with four or more
+    editions the legend ran past the fixed viewBox, which SVG clips, so editions silently vanished
+    from the key while their lines stayed on the chart. Handing the job to the browser removes the
+    estimate: it measures and wraps text itself, in any script and at any width.
+    """
+    items = []
+    for s, _, colour in _drawn(series_list):
+        label = s["lang"] if indexed else f"{s['lang']}: {s.get('title') or ''}"
+        items.append(f'<li><span class="swatch" style="background:{colour}"></span>'
+                     f'{html.escape(label)}</li>')
+    return f'<ul class="legend">{"".join(items)}</ul>' if items else ""
+
+
 def _line_chart(series_list: list, title: str, indexed: bool,
-                width: int = 470, height: int = 250) -> str:
-    """One inline SVG line chart. `indexed` rebases every series to 100 at its first point."""
-    left, right, top, bottom = 52, 12, 26, 44
+                width: int = 470, height: int = 235) -> str:
+    """One inline SVG line chart. `indexed` rebases every series to 100 at its first point.
+
+    The legend is rendered separately by _legend_html; see there for why.
+    """
+    left, right, top, bottom = 52, 12, 26, 34
     pw, ph = width - left - right, height - top - bottom
 
-    drawn = [s for s in series_list if s.get("data") is not None and not s["data"].empty]
+    drawn = _drawn(series_list)
     if not drawn:
         return (f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}: no data">'
                 f'<text x="{width/2}" y="{height/2}" text-anchor="middle" class="nodata">no data</text></svg>')
 
     # Value series, after optional rebasing.
     plots = []
-    for i, s in enumerate(drawn):
-        d = s["data"]
+    for s, d, colour in drawn:
         vals = [float(v) for v in d.views]
         if indexed:
             base = next((v for v in vals if v > 0), 1.0)
             vals = [v / base * 100.0 for v in vals]
-        plots.append((s, d.dates, vals, PALETTE[i % len(PALETTE)]))
+        plots.append((s, d.dates, vals, colour))
 
     x_min = min(d[0].toordinal() for _, d, _, _ in plots)
     x_max = max(d[-1].toordinal() for _, d, _, _ in plots)
@@ -160,13 +195,6 @@ def _line_chart(series_list: list, title: str, indexed: bool,
     out.append(f'<line x1="{left}" y1="{top + ph}" x2="{left + pw}" y2="{top + ph}" class="axis"/>')
     out.append(f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + ph}" class="axis"/>')
 
-    # legend
-    lx, ly = left, height - 6
-    for s, _, _, colour in plots:
-        label = s["lang"] if indexed else f"{s['lang']}: {s.get('title') or ''}"
-        out.append(f'<line x1="{lx}" y1="{ly - 3}" x2="{lx + 12}" y2="{ly - 3}" stroke="{colour}" stroke-width="2"/>')
-        out.append(f'<text x="{lx + 16}" y="{ly}" class="legend">{html.escape(label)}</text>')
-        lx += 22 + 6.0 * len(label)
     out.append("</svg>")
     return "".join(out)
 
@@ -221,7 +249,10 @@ h1 { font-size:20px; margin:0 0 4px; }
 svg { width:100%; height:auto; }
 .ctitle { font-size:10px; font-weight:600; fill:var(--ink); }
 .tick { font-size:8px; fill:var(--muted); }
-.legend { font-size:8px; fill:var(--muted); }
+ul.legend { display:flex; flex-wrap:wrap; gap:3px 12px; list-style:none;
+            margin:2px 0 0; padding:0; font-size:10px; color:var(--muted); }
+ul.legend li { display:flex; align-items:center; gap:5px; min-width:0; }
+ul.legend .swatch { width:12px; height:2px; flex:none; border-radius:1px; }
 .spike { font-size:7px; }
 .nodata { font-size:11px; fill:var(--muted); }
 .grid { stroke:var(--rule); stroke-width:1; }
@@ -256,8 +287,10 @@ def build_report(topic: str, period_label: str, series_list: list, out_path: str
         f'<div class="sub">Editions: {html.escape(langs)} &nbsp;|&nbsp; Period: {html.escape(period_label)}'
         f" &nbsp;|&nbsp; Generated: {dt.date.today().isoformat()}</div>",
         '<div class="charts">',
-        f"<div>{_line_chart(series_list, 'Pageviews (raw)', indexed=False)}</div>",
-        f"<div>{_line_chart(series_list, 'Indexed to 100 at start (compare shape, not size)', indexed=True)}</div>",
+        f"<div>{_line_chart(series_list, 'Pageviews (raw)', indexed=False)}"
+        f"{_legend_html(series_list, indexed=False)}</div>",
+        f"<div>{_line_chart(series_list, 'Indexed to 100 at start (compare shape, not size)', indexed=True)}"
+        f"{_legend_html(series_list, indexed=True)}</div>",
         "</div>",
         _table_html(series_list, normalized),
         "<h2>Findings</h2>",
