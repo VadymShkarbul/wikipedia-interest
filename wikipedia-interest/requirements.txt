@@ -1,6 +1,8 @@
-# Skill dependencies (for pip users). The project itself uses uv (pyproject.toml / uv.lock),
-# and scripts/wikipop.py also carries PEP 723 inline metadata so `uv run` auto-installs these.
-requests>=2.31
-pandas>=2.0
-numpy>=1.24
-matplotlib>=3.7
+# The skill's core needs NOTHING here: `resolve` and `analyze` and the default HTML report
+# run on the Python 3.12 standard library alone. These are the two optional paths.
+
+# Typed MCP tools instead of shell commands (scripts/../server.py):
+#   mcp>=2,<3
+
+# PDF output instead of the default self-contained HTML (`report --format pdf`):
+#   matplotlib>=3.7

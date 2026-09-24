@@ -8,7 +8,8 @@
 """wikipop — analyze Wikipedia pageviews as a proxy for audience interest.
 
 Agent-facing CLI. Every command prints ONE JSON object to stdout; errors are JSON too (never
-tracebacks). Run standalone with uv (from the skill directory):  `uv run scripts/wikipop.py <cmd> ...`
+tracebacks). Needs no installed packages (except `--format pdf`). From the skill directory:
+  `python3 scripts/wikipop.py <cmd> ...`
 
 Commands:
   resolve    topic + languages -> exact article title per language (flags coverage gaps)

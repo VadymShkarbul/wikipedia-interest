@@ -1,48 +1,74 @@
-# Installing `wikipedia-interest` as an Agent Skill
+# Installing `wikipedia-interest`
 
-This folder **is** the skill — it is self-contained (`SKILL.md`, `scripts/`, `references/`,
-`examples.md`, `requirements.txt`). To install it into an agent, copy this whole folder into that
-agent's skills directory under the name `wikipedia-interest`, then restart the agent so it re-scans.
+This folder **is** the skill. Copy it into an agent's skills directory and restart.
 
 ## Prerequisites
 - **Python 3.12+**
-- **uv** — https://docs.astral.sh/uv/ (`curl -LsSf https://astral.sh/uv/install.sh | sh`), or plain
-  `pip` with `requirements.txt`. No project setup is needed: `scripts/wikipop.py` carries PEP 723
-  inline dependencies, so `uv run scripts/wikipop.py …` auto-installs them on first use.
-- Internet access to the Wikimedia APIs.
+- Internet access to the Wikimedia APIs. **No API key.**
+- **uv** ([install](https://docs.astral.sh/uv/)) — only if you want the MCP server or PDF output.
+  The CLI's `resolve` and `analyze` run on the standard library alone.
+
+## What each path costs
+
+| Path | Extra packages | Needs a Bash grant? |
+|---|---|---|
+| CLI — `resolve`, `analyze`, `report` (HTML) | **none** | yes |
+| MCP server — typed tools | `mcp` (~27 MB) | **no** |
+| `report --format pdf` | `matplotlib` (~61 MB with fontTools/PIL) | yes |
 
 ## Claude Code
-Personal (available in every project):
+
 ```bash
 mkdir -p ~/.claude/skills
 cp -R wikipedia-interest ~/.claude/skills/wikipedia-interest
 ```
-Project-scoped (checked in with a repo) — from that repo's root:
+
+Project-scoped instead, from that repo's root:
+
 ```bash
 mkdir -p .claude/skills
 cp -R /path/to/wikipedia-interest .claude/skills/wikipedia-interest
 ```
-Restart Claude Code (or start a new session) so it picks up the new skill. It activates
-automatically when a request matches the description in `SKILL.md`, or invoke it with
+
+Restart Claude Code. The skill activates when a request matches its description, or invoke it with
 `/wikipedia-interest`.
 
+Because the folder carries `.claude-plugin/plugin.json`, it also loads as a plugin
+(`wikipedia-interest@skills-dir`), which is what lets it register the bundled MCP server declared in
+`.mcp.json`. `uv run` plus the PEP 723 header in `server.py` installs the `mcp` package on first use
+— there is no separate install step. Approve the server when prompted, then allow the individual
+tools you want:
+
+```
+mcp__wikipedia-interest__resolve_topic      (read-only)
+mcp__wikipedia-interest__analyze_interest   (read-only)
+mcp__wikipedia-interest__build_report       (writes one .html file)
+```
+
+Granting these is much narrower than granting `Bash(uv run *)`, which can execute anything.
+
 ## Codex CLI
-Codex reads skills from `~/.codex/skills/` (personal) or `.codex/skills/` (project); it also
-recognizes the cross-agent `~/.agents/skills/` and `.agents/skills/` locations.
+
 ```bash
 mkdir -p ~/.codex/skills
 cp -R wikipedia-interest ~/.codex/skills/wikipedia-interest
 ```
-Restart Codex. Invoke explicitly with `$wikipedia-interest`, or let Codex select it when a request
-matches the skill description.
 
-## Verify the install
+Restart Codex; invoke with `$wikipedia-interest`. The plugin wrapper is Claude Code-specific, so
+Codex uses the CLI — which needs no dependencies. To use the typed tools there instead, register
+`server.py` as an stdio MCP server in Codex's own config.
+
+## Verify
+
 From inside the installed skill directory:
-```bash
-uv run scripts/wikipop.py analyze --topic "astronomy" --langs uk --last 2y
-```
-You should get a JSON object with `metrics` and `confidence`. See `examples.md` for more.
 
-> Note: paths in `SKILL.md` and `examples.md` are relative to this skill directory. When the agent
-> runs the CLI, it should run from here (or prefix `scripts/wikipop.py` with this folder's absolute
-> path).
+```bash
+python3 scripts/wikipop.py analyze --topic "astronomy" --langs uk --last 2y
+```
+
+You should get one JSON object with `metrics` and `confidence`. See `examples.md` for more.
+
+## Where files go
+- **Cache:** `scripts/.wikipop_cache/` next to the code, not your working directory. Override with
+  `--cache-dir` or `WIKIPOP_CACHE_DIR`. Safe to delete; it only makes repeat queries slower.
+- **Reports:** where you point `--out` / `out_path` (default `report.html` in the working directory).

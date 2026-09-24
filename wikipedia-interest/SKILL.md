@@ -4,20 +4,20 @@ description: >-
   Analyze Wikipedia pageviews as a proxy for audience interest to help decide which topics to build
   and which language markets to enter. Use when a user asks whether interest in a topic is growing or
   declining, wants to compare a topic across language editions (e.g. Polish vs Czech), asks how much a
-  trend can be trusted, or wants a short shareable one-page PDF report on topic/market/language demand.
+  trend can be trusted, or wants a short shareable one-page report on topic/market/language demand.
   Handles topics in any language, resolves the right article per Wikipedia edition, computes growth,
-  trend and confidence, and generates charts + a PDF.
+  trend and confidence, and generates charts + a report.
 license: MIT
-compatibility: Requires Python 3.12+ and uv (or pip). Needs internet access to the Wikimedia APIs.
+compatibility: Requires Python 3.12+. Needs internet access to the Wikimedia APIs. No API key.
 metadata:
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Wikipedia interest analysis
 
 Turn a plain-language question about audience interest into a data-grounded answer using Wikimedia
-pageview statistics. The Python code does all the data work and statistics; you just pick the command,
-read the JSON it prints, and explain it.
+pageview statistics. **The code does the statistics; you orchestrate and narrate.** Never compute
+growth, trend or confidence yourself — read them from the output.
 
 ## When to use
 - "Is interest in <topic> growing in <language> Wikipedia?"
@@ -28,94 +28,90 @@ read the JSON it prints, and explain it.
 Always remind the user: **pageviews measure curiosity, not willingness to pay.** They are a first
 signal to validate further, not proof of a market.
 
-## Setup (once)
-You need **Python 3.12+** and **uv** (or pip; see `requirements.txt`). No project setup is required:
-`scripts/wikipop.py` carries PEP 723 inline dependencies, so `uv run` auto-installs them on first use.
+## How to call it
 
-**Paths in this file are relative to this skill's directory** (the folder that holds this `SKILL.md`).
-Run the commands from that directory, or prefix `scripts/wikipop.py` with the skill's absolute path.
-Internet access to the Wikimedia APIs is required.
+If the MCP tools `resolve_topic`, `analyze_interest` and `build_report` are available, **use them** —
+they take typed arguments and need no shell access.
 
-## The one command you usually need
+Otherwise use the CLI. It needs no installation (`resolve`/`analyze` are standard-library only) and
+prints exactly one JSON object per run. Paths below are relative to this skill's directory; run from
+here, or use an absolute path:
+
 ```
-uv run scripts/wikipop.py report \
-  --topic "<topic>" --langs <l1,l2,...> --last 2y --out report.pdf
+python3 scripts/wikipop.py analyze --topic "<topic>" --langs uk,pl --last 2y
 ```
-This resolves article titles, fetches pageviews, analyzes, writes `report.pdf` + `report.png`, and
-prints a JSON summary. Narrate the JSON; point the user to the PDF.
 
-Languages are Wikipedia edition codes: `uk` (Ukrainian), `pl` (Polish), `cs` (Czech), `en` (English),
-`de`, `es`, … Comma-separated, no spaces.
+Languages are Wikipedia edition codes: `uk`, `pl`, `cs`, `en`, `de`, `es`, … comma-separated.
 
 ## Recommended workflow
-1. **Resolve first** if unsure the concept exists in each language:
-   ```
-   uv run scripts/wikipop.py resolve --topic "<topic>" --langs <l1,l2,...>
-   ```
-   Check each `found`/`method`. `method:"gap"` = the concept exists on Wikidata but that edition has no
-   article (a real coverage gap — say so, don't compare it). `method:"search"` = weaker match found by
-   text search (no Wikidata concept); treat with lower confidence and consider verifying the title.
-   **Disambiguate ambiguous topics.** The output has a `candidates` list (Wikidata id + label +
-   description). If the auto-picked concept is wrong (e.g. "mercury" → the Ford car marque, not the
-   planet), re-run with `--qid Q308` to pin the right concept. Pass the same `--qid` to `analyze`/`report`.
-2. **Analyze** (fast, no files) for a first read or follow-ups:
-   ```
-   uv run scripts/wikipop.py analyze --topic "<topic>" --langs <...> --last 2y
-   ```
-3. **Report** when the user wants something shareable (adds the PDF/PNG).
+
+1. **Resolve first** when the topic is ambiguous or may be missing from an edition.
+   → tool `resolve_topic` / CLI `resolve --topic "<t>" --langs uk,pl`
+
+   Check each `found` / `method`:
+   - `method:"wikidata"` — exact concept match. Good.
+   - `method:"gap"` — the concept exists but that edition has **no article**. A real coverage gap:
+     say so, don't compare it.
+   - `method:"search"` — weaker text-search match. Lower confidence; consider verifying the title.
+
+   **Disambiguate.** The output has `candidates` (Wikidata id + label + description). If the
+   auto-pick is wrong ("mercury" → the Ford marque, not the planet), re-run pinned with `qid: "Q308"`.
+   Pass the same `qid` to analyze/report.
+
+2. **Analyze** — the main step. → tool `analyze_interest` / CLI `analyze`
+
+3. **Report** only when the user wants something shareable. → tool `build_report` / CLI `report`
+
+   **You write the `findings` narrative** — what the numbers mean and what to do next, in the user's
+   language. The tool appends the confidence label and leading caveat for every edition itself, so
+   the file can't be forwarded without them. Don't invent numbers; base the narrative on the analyze
+   output. The result is a self-contained `.html` one-pager; tell the user where it was written.
+   (`--format pdf` on the CLI produces a PDF instead, but needs matplotlib installed.)
 
 ## How to read the output
-Per language you get `metrics`:
-- `direction` (up/down/flat) + `direction_basis`: **the verdict, and which number backs it.**
-  `basis: "yoy"` → it comes from `yoy_pct`, which compares the same calendar months, so seasonality
-  cannot flip it. `basis: "growth"` → the series is under 24 months, so it falls back to `growth_pct`.
-  **Quote the number the basis points at**, not the other one.
-- `growth_pct`: median of the last window vs the first window. Those are usually *different calendar
-  months*, so on a seasonal topic it exaggerates or even invents a change (a flat topic that peaks in
-  autumn reads as "-34%" when the window ends in summer). Don't lead with it when basis is `yoy`.
-- `yoy_pct`: trailing 12 months vs prior 12 (seasonality-safe; needs ≥24 monthly points).
-- `trend_slope_per_period` + `trend_r2`: slope and how well a straight line fits (R² near 1 = clean
-  trend; near 0 = choppy — which for a seasonal topic is normal, not a problem).
-- `mean_views`, `total_views`, `latest_views`.
-- `anomalies`: spike dates — usually a news/event burst, **not** organic growth.
-- `confidence`: `label` (high/medium/low) + `reasons`. Lead your answer with this, and pass the
-  reasons on — they name the specific caveat (low volume, short/gappy history, spike-driven,
-  seasonal, bot-heavy). Volume and length thresholds are monthly-equivalent, so a `--granularity
-  daily` run is judged on the same scale as a monthly one.
-- `dropped`: the latest partial period the tool removed (kept out to avoid a fake drop).
-- `seasonality` (≥24 months): `peak_month`/`low_month`/`strength`. Mention recurring peaks so a
-  seasonal high isn't read as a trend.
-- `share_per_million_mean` (only with `--normalize`): article views per **million** of that edition's
-  total pageviews. Use this to compare across editions of very different sizes fairly — it can flip a
-  raw-count ranking (a small edition can have a larger *share* of attention).
-- `bot_share` (only with `--check-bots`): fraction of raw traffic that is non-human. High (>0.5) means
-  the topic is crawler-heavy; note it as a data-quality caveat.
-- Top-level `candidates`/`qid`: the resolved concept and its alternatives (for disambiguation).
 
-## Common refinements (repeat/related queries are cheap — results are cached)
-- Change window: `--last 3y`, `--last 18m`, or `--start YYYYMMDD --end YYYYMMDD`.
-- Add/remove languages: edit `--langs`.
-- Pin a concept: `--qid Q308` (from the `candidates` list) on `resolve`/`analyze`/`report`.
-- Fair cross-edition comparison: add `--normalize` (share of attention per million).
-- Flag bot-heavy topics: add `--check-bots` (one extra request per language).
-- Include bots or a device split: `--agent all-agents` (default `user` excludes bots), or
-  `--access mobile-web|desktop`.
-- Daily detail: `--granularity daily` (better for short, recent windows).
-- Provide your own narrative in the PDF: `--note "..."`.
-- Inspect one article directly: `wikipop.py pageviews --lang uk --article "Астрономія" --start 20230101 --end 20250101`.
+Per language you get `metrics`:
+
+- `direction` (up/down/flat) + `direction_basis` — **the verdict, and which number backs it.**
+  `basis:"yoy"` → quote `yoy_pct`. `basis:"growth"` → quote `growth_pct`.
+  **Quote the number the basis names, not the other one.**
+- `yoy_pct` — trailing 12 months vs the prior 12. Compares the same calendar months, so seasonality
+  can't flip it. Needs ≥24 monthly points.
+- `growth_pct` — median of the last window vs the first window. Those are usually *different calendar
+  months*, so on a seasonal topic it exaggerates or invents a change (a flat topic peaking in autumn
+  reads as "-34%" when the window ends in summer). Never lead with it when the basis is `yoy`.
+- `confidence` — `label` (high/medium/low) + `reasons`. **Lead your answer with this** and pass the
+  reasons on; they name the specific caveat. Thresholds are monthly-equivalent, so a `daily` run is
+  judged on the same scale as a monthly one.
+- `trend_slope_per_period`, `trend_r2` — slope, and how well a straight line fits. Low R² on a
+  seasonal topic is normal, not a problem.
+- `mean_views`, `total_views`, `latest_views`, `volatility_cv`.
+- `anomalies` — spike dates. Usually a news/event burst, **not** organic growth.
+- `dropped` — the latest partial period, removed so a half-finished month isn't read as a decline.
+- `seasonality` (≥24 months) — `peak_month` / `low_month` / `strength`. Mention recurring peaks.
+- `share_per_million_mean` (with `normalize`) — views per **million** of that edition's total
+  traffic. Use it to compare editions of very different sizes; it can flip a raw-count ranking.
+- `bot_share` (with `check_bots`) — fraction of raw traffic that is non-human. >0.5 is a caveat.
+- Top-level `candidates` / `qid` — the resolved concept and its alternatives.
+
+## Refinements (repeats are cheap — responses are cached)
+- Window: `window: "3y"` / `"18m"`, or explicit `start` + `end` (`YYYYMMDD`).
+- Pin a concept: `qid: "Q308"`.
+- Fair cross-edition comparison: `normalize: true`.
+- Flag crawler-heavy topics: `check_bots: true`.
+- Recent detail: `granularity: "daily"` with a short window.
 
 ## Sanity checks before you conclude
-- Did the resolved concept match the intended meaning? Check `candidates`; pin with `--qid` if not.
-- Did every language resolve? Report gaps explicitly.
+- Did the resolved concept match the intended meaning? Check `candidates`; pin with `qid` if not.
+- Did every language resolve? Report gaps explicitly instead of comparing nothing.
 - Quoting a change? Use the number `direction_basis` names. A `growth_pct` that disagrees with
   `direction` is the seasonal artefact, not a second opinion.
-- Comparing editions of very different sizes? Prefer `--normalize` (share of attention).
+- Comparing editions of very different sizes? Prefer `normalize`.
 - Is `mean_views` tiny (<~200/mo)? Trends are noisy — lower your confidence.
-- Are there spikes (`anomalies`)? Don't call a one-month spike "growth".
-- Compare **shape** (indexed chart / growth %), not absolute counts, across editions of different sizes.
+- Spikes in `anomalies`? Don't call a one-month spike "growth".
 
 ## More detail
 - `references/API.md` — the Wikimedia endpoints, parameters and gotchas.
-- `references/METHODOLOGY.md` — exactly how growth/trend/confidence are computed, limitations, and how
-  to grow this skill for bigger/harder research.
-- `examples.md` — the canonical example questions mapped to exact commands.
+- `references/METHODOLOGY.md` — exactly how each metric is computed, limitations, and how to grow
+  this skill for bigger research.
+- `examples.md` — canonical questions mapped to exact calls.

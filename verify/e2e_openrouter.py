@@ -7,7 +7,7 @@
 
 Why this exists: the task requires the skill to be usable by a small tool-capable model (Haiku 4.5
 class). This drives a minimal agent loop — system prompt = SKILL.md, one `run_bash` tool restricted to
-the skill's CLI — asks an example question, and checks the model produces a valid one-page PDF.
+the skill's CLI — asks an example question, and checks the model produces a valid one-page report.
 
 Usage:
     export OPENROUTER_API_KEY=sk-or-...
@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -33,13 +34,13 @@ import requests
 REPO = Path(__file__).resolve().parent.parent
 SKILL_DIR = REPO / "wikipedia-interest"  # commands run from the skill dir, as when installed standalone
 SKILL_MD = SKILL_DIR / "SKILL.md"
-CLI_PREFIX = "uv run scripts/wikipop.py"
-OUT_PDF = REPO / "verify_report.pdf"
+CLI_PREFIX = "python3 scripts/wikipop.py"
+OUT_REPORT = REPO / "verify_report.html"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 DEFAULT_QUERY = (
     "Compare interest in intermittent fasting on Czech and Ukrainian Wikipedia over the last 2 years, "
-    f"and produce a one-page PDF at {OUT_PDF}. Then summarize the finding in one paragraph."
+    f"and produce a one-page report at {OUT_REPORT}. Then summarize the finding in one paragraph."
 )
 
 TOOLS = [{
@@ -57,6 +58,13 @@ TOOLS = [{
 
 
 def run_bash(command: str) -> str:
+    """Run ONLY the skill's CLI, with no shell.
+
+    The command is split with shlex and executed as an argv list, so shell metacharacters are inert:
+    `... analyze --topic x ; rm -rf y` is rejected rather than being half-executed. An earlier version
+    validated the command and then ran the ORIGINAL string under `shell=True`, which validated nothing.
+    This is still only a dev harness, but it should not model a broken pattern.
+    """
     cmd = command.strip()
     # Tolerate a leading `cd <repo> &&` (models commonly prefix it) before the CLI.
     m = re.match(r"cd\s+\S+\s*&&\s*(.+)", cmd, re.S)
@@ -64,7 +72,13 @@ def run_bash(command: str) -> str:
     if not remainder.startswith(CLI_PREFIX):
         return f"REFUSED: only the `{CLI_PREFIX}` CLI is allowed (an optional `cd <dir> &&` prefix is ok). Got: {cmd[:120]}"
     try:
-        proc = subprocess.run(cmd, shell=True, cwd=SKILL_DIR, capture_output=True, text=True, timeout=180)
+        argv = shlex.split(remainder)
+    except ValueError as exc:
+        return f"REFUSED: could not parse command ({exc})"
+    if any(tok in (";", "&&", "||", "|", ">", ">>", "<", "&") for tok in argv):
+        return "REFUSED: shell operators are not allowed; run a single CLI command"
+    try:
+        proc = subprocess.run(argv, cwd=SKILL_DIR, capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
         return "ERROR: command timed out after 180s"
     out = (proc.stdout or "")[:6000]
@@ -95,8 +109,8 @@ def main():
         raise SystemExit("Set OPENROUTER_API_KEY first (get a key at https://openrouter.ai/).")
     model = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
 
-    if OUT_PDF.exists():
-        OUT_PDF.unlink()
+    if OUT_REPORT.exists():
+        OUT_REPORT.unlink()
 
     system = (
         "You are a data analyst agent. You have the following skill; follow it exactly and use ONLY the "
@@ -124,9 +138,9 @@ def main():
         print(f"[step {step}] FINAL:\n{msg.get('content', '')}")
         break
 
-    ok = OUT_PDF.exists() and OUT_PDF.stat().st_size > 1000
+    ok = OUT_REPORT.exists() and OUT_REPORT.stat().st_size > 1000
     print("-" * 60)
-    print(f"PASS: PDF created at {OUT_PDF}" if ok else "FAIL: no valid PDF produced")
+    print(f"PASS: report created at {OUT_REPORT}" if ok else "FAIL: no valid report produced")
     sys.exit(0 if ok else 1)
 
 
