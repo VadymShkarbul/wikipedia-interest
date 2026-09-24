@@ -39,11 +39,28 @@ def test_cli_matches_golden(name, argv, warm_cache):
     assert got == expected
 
 
-def test_cli_report_writes_pdf_offline(warm_cache, tmp_path):
+def test_cli_report_writes_html_offline(warm_cache, tmp_path):
+    """The default path: a one-pager with no third-party dependency in sight."""
     if warm_cache is None:
         pytest.skip("no recorded fixtures; run `uv run evals/fixtures/record.py`")
+    out = tmp_path / "report.html"
+    proc = _run([*REPORT_ARGV, "--out", str(out), "--findings", "Narrative from the model."],
+                warm_cache)
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["files"]["html"] == str(out)
+    text = out.read_text(encoding="utf-8")
+    assert "Narrative from the model." in text
+    assert "Астрономія" in text          # non-Latin title survives the whole pipeline
+    assert "confidence" in text           # the computed caveat travels with it
+
+
+def test_cli_report_pdf_is_opt_in(warm_cache, tmp_path):
+    if warm_cache is None:
+        pytest.skip("no recorded fixtures; run `uv run evals/fixtures/record.py`")
+    pytest.importorskip("matplotlib", reason="PDF output is an optional extra")
     out_pdf = tmp_path / "report.pdf"
-    proc = _run([*REPORT_ARGV, "--out", str(out_pdf)], warm_cache)
+    proc = _run([*REPORT_ARGV, "--format", "pdf", "--out", str(out_pdf)], warm_cache)
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["files"]["pdf"] == str(out_pdf)
