@@ -29,12 +29,16 @@ Always remind the user: **pageviews measure curiosity, not willingness to pay.**
 signal to validate further, not proof of a market.
 
 ## Setup (once)
-From the repo root, dependencies are managed with uv. Either rely on the project env (`uv run …`) or,
-to run the skill standalone anywhere, the CLI carries inline deps so `uv run` auto-installs them.
+You need **Python 3.12+** and **uv** (or pip; see `requirements.txt`). No project setup is required:
+`scripts/wikipop.py` carries PEP 723 inline dependencies, so `uv run` auto-installs them on first use.
+
+**Paths in this file are relative to this skill's directory** (the folder that holds this `SKILL.md`).
+Run the commands from that directory, or prefix `scripts/wikipop.py` with the skill's absolute path.
+Internet access to the Wikimedia APIs is required.
 
 ## The one command you usually need
 ```
-uv run wikipedia-interest/scripts/wikipop.py report \
+uv run scripts/wikipop.py report \
   --topic "<topic>" --langs <l1,l2,...> --last 2y --out report.pdf
 ```
 This resolves article titles, fetches pageviews, analyzes, writes `report.pdf` + `report.png`, and
@@ -46,7 +50,7 @@ Languages are Wikipedia edition codes: `uk` (Ukrainian), `pl` (Polish), `cs` (Cz
 ## Recommended workflow
 1. **Resolve first** if unsure the concept exists in each language:
    ```
-   uv run wikipedia-interest/scripts/wikipop.py resolve --topic "<topic>" --langs <l1,l2,...>
+   uv run scripts/wikipop.py resolve --topic "<topic>" --langs <l1,l2,...>
    ```
    Check each `found`/`method`. `method:"gap"` = the concept exists on Wikidata but that edition has no
    article (a real coverage gap — say so, don't compare it). `method:"search"` = weaker match found by
@@ -56,20 +60,28 @@ Languages are Wikipedia edition codes: `uk` (Ukrainian), `pl` (Polish), `cs` (Cz
    planet), re-run with `--qid Q308` to pin the right concept. Pass the same `--qid` to `analyze`/`report`.
 2. **Analyze** (fast, no files) for a first read or follow-ups:
    ```
-   uv run wikipedia-interest/scripts/wikipop.py analyze --topic "<topic>" --langs <...> --last 2y
+   uv run scripts/wikipop.py analyze --topic "<topic>" --langs <...> --last 2y
    ```
 3. **Report** when the user wants something shareable (adds the PDF/PNG).
 
 ## How to read the output
 Per language you get `metrics`:
-- `direction` (up/down/flat) + `growth_pct`: median of the last window vs the first window.
-- `yoy_pct`: trailing 12 months vs prior 12 (seasonality-aware; needs ≥24 monthly points).
+- `direction` (up/down/flat) + `direction_basis`: **the verdict, and which number backs it.**
+  `basis: "yoy"` → it comes from `yoy_pct`, which compares the same calendar months, so seasonality
+  cannot flip it. `basis: "growth"` → the series is under 24 months, so it falls back to `growth_pct`.
+  **Quote the number the basis points at**, not the other one.
+- `growth_pct`: median of the last window vs the first window. Those are usually *different calendar
+  months*, so on a seasonal topic it exaggerates or even invents a change (a flat topic that peaks in
+  autumn reads as "-34%" when the window ends in summer). Don't lead with it when basis is `yoy`.
+- `yoy_pct`: trailing 12 months vs prior 12 (seasonality-safe; needs ≥24 monthly points).
 - `trend_slope_per_period` + `trend_r2`: slope and how well a straight line fits (R² near 1 = clean
-  trend; near 0 = choppy/uncertain).
+  trend; near 0 = choppy — which for a seasonal topic is normal, not a problem).
 - `mean_views`, `total_views`, `latest_views`.
 - `anomalies`: spike dates — usually a news/event burst, **not** organic growth.
-- `confidence`: `label` (high/medium/low) + `reasons`. Lead your answer with this. Low confidence
-  means low volume, short/gappy history, or spike-driven — say the signal is weak.
+- `confidence`: `label` (high/medium/low) + `reasons`. Lead your answer with this, and pass the
+  reasons on — they name the specific caveat (low volume, short/gappy history, spike-driven,
+  seasonal, bot-heavy). Volume and length thresholds are monthly-equivalent, so a `--granularity
+  daily` run is judged on the same scale as a monthly one.
 - `dropped`: the latest partial period the tool removed (kept out to avoid a fake drop).
 - `seasonality` (≥24 months): `peak_month`/`low_month`/`strength`. Mention recurring peaks so a
   seasonal high isn't read as a trend.
@@ -95,6 +107,8 @@ Per language you get `metrics`:
 ## Sanity checks before you conclude
 - Did the resolved concept match the intended meaning? Check `candidates`; pin with `--qid` if not.
 - Did every language resolve? Report gaps explicitly.
+- Quoting a change? Use the number `direction_basis` names. A `growth_pct` that disagrees with
+  `direction` is the seasonal artefact, not a second opinion.
 - Comparing editions of very different sizes? Prefer `--normalize` (share of attention).
 - Is `mean_views` tiny (<~200/mo)? Trends are noisy — lower your confidence.
 - Are there spikes (`anomalies`)? Don't call a one-month spike "growth".

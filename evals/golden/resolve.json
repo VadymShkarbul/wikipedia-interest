@@ -1,0 +1,19 @@
+{
+  "topic": "astronomy",
+  "qid": "Q333",
+  "candidates": [],
+  "resolved": {
+    "uk": {
+      "title": "Астрономія",
+      "qid": "Q333",
+      "found": true,
+      "method": "wikidata"
+    },
+    "pl": {
+      "title": "Astronomia",
+      "qid": "Q333",
+      "found": true,
+      "method": "wikidata"
+    }
+  }
+}

@@ -35,15 +35,24 @@ LIMITATIONS = (
 
 
 def _direction_phrase(m: dict) -> str:
+    """Describe the direction, quoting the number that actually backs it.
+
+    `direction` comes from YoY when there is enough history (seasonality-safe) and from
+    `growth_pct` otherwise — quoting the other one here would contradict the verdict.
+    """
     d = m.get("direction")
-    g = m.get("growth_pct")
-    gtxt = "n/a" if g in (None, "inf") else f"{g:+.0f}%"
+    if m.get("direction_basis") == "yoy" and m.get("yoy_pct") is not None:
+        num = f"{m['yoy_pct']:+.0f}% year-over-year"
+    else:
+        g = m.get("growth_pct")
+        num = ("from a near-zero baseline" if g == "inf"
+               else "size unclear" if g is None else f"{g:+.0f}% over the period")
     if d == "up":
-        return f"rising ({gtxt} over the period)"
+        return f"rising ({num})"
     if d == "down":
-        return f"declining ({gtxt} over the period)"
+        return f"declining ({num})"
     if d == "flat":
-        return f"broadly flat ({gtxt})"
+        return f"broadly flat ({num})"
     return "unclear"
 
 
@@ -60,10 +69,12 @@ def build_findings(topic: str, series_list: list, note: Optional[str]) -> str:
         conf = m["confidence"]
         share = m.get("share_per_million_mean")
         share_txt = f"; {share:.1f} views/M of edition traffic" if share is not None else ""
+        # When confidence isn't high, the leading reason travels with the number it qualifies —
+        # the PDF is shared on its own, so a caveat left in the JSON would be lost.
+        caveat = f" {conf['reasons'][0]}" if conf["label"] != "high" and conf["reasons"] else ""
         lines.append(
             f"- {s['lang']} ({s['title']}): interest is {_direction_phrase(m)}; "
-            f"YoY {('n/a' if m['yoy_pct'] is None else f'{m['yoy_pct']:+.0f}%')}; "
-            f"~{m['mean_views']:.0f} views/mo{share_txt}; confidence {conf['label']}."
+            f"~{m['mean_views']:.0f} views/mo{share_txt}; confidence {conf['label']}.{caveat}"
         )
     if found:
         rising = [s for s in found if s["metrics"]["direction"] == "up"]

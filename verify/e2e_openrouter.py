@@ -31,8 +31,9 @@ from pathlib import Path
 import requests
 
 REPO = Path(__file__).resolve().parent.parent
-SKILL_MD = REPO / "wikipedia-interest" / "SKILL.md"
-CLI_PREFIX = "uv run wikipedia-interest/scripts/wikipop.py"
+SKILL_DIR = REPO / "wikipedia-interest"  # commands run from the skill dir, as when installed standalone
+SKILL_MD = SKILL_DIR / "SKILL.md"
+CLI_PREFIX = "uv run scripts/wikipop.py"
 OUT_PDF = REPO / "verify_report.pdf"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -45,7 +46,7 @@ TOOLS = [{
     "type": "function",
     "function": {
         "name": "run_bash",
-        "description": "Run a shell command from the repo root. Only the wikipop.py CLI is permitted.",
+        "description": "Run a shell command from the skill directory. Only the wikipop.py CLI is permitted.",
         "parameters": {
             "type": "object",
             "properties": {"command": {"type": "string", "description": "the shell command"}},
@@ -61,9 +62,9 @@ def run_bash(command: str) -> str:
     m = re.match(r"cd\s+\S+\s*&&\s*(.+)", cmd, re.S)
     remainder = m.group(1).strip() if m else cmd
     if not remainder.startswith(CLI_PREFIX):
-        return f"REFUSED: only the `{CLI_PREFIX}` CLI is allowed (an optional `cd <repo> &&` prefix is ok). Got: {cmd[:120]}"
+        return f"REFUSED: only the `{CLI_PREFIX}` CLI is allowed (an optional `cd <dir> &&` prefix is ok). Got: {cmd[:120]}"
     try:
-        proc = subprocess.run(cmd, shell=True, cwd=REPO, capture_output=True, text=True, timeout=180)
+        proc = subprocess.run(cmd, shell=True, cwd=SKILL_DIR, capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
         return "ERROR: command timed out after 180s"
     out = (proc.stdout or "")[:6000]

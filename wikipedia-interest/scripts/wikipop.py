@@ -11,7 +11,7 @@
 """wikipop — analyze Wikipedia pageviews as a proxy for audience interest.
 
 Agent-facing CLI. Every command prints ONE JSON object to stdout; errors are JSON too (never
-tracebacks). Run standalone with uv:  `uv run wikipedia-interest/scripts/wikipop.py <cmd> ...`
+tracebacks). Run standalone with uv (from the skill directory):  `uv run scripts/wikipop.py <cmd> ...`
 
 Commands:
   resolve    topic + languages -> exact article title per language (flags coverage gaps)
@@ -60,6 +60,12 @@ def _period(args) -> tuple[str, str, str]:
     end = pd.Timestamp.today().normalize()
     offset = {"y": pd.DateOffset(years=n), "m": pd.DateOffset(months=n), "d": pd.DateOffset(days=n)}[unit]
     start = end - offset
+    # A monthly window starting mid-month gets a TRUNCATED first bucket back (the API counts only
+    # from the start date), which understates the baseline that growth_pct and yoy_pct measure
+    # against. Snap to the 1st so `--last 2y` means the last 2 years of *complete* months; the
+    # trailing partial month is dropped separately by trim_partial_tail.
+    if getattr(args, "granularity", "monthly") == "monthly":
+        start = start.replace(day=1)
     if start < pd.Timestamp("2015-07-01"):
         start = pd.Timestamp("2015-07-01")
     return start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), f"last {last}"

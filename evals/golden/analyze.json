@@ -1,0 +1,123 @@
+{
+  "topic": "astronomy",
+  "qid": "Q333",
+  "candidates": [],
+  "period": "20220101–20240101",
+  "start": "20220101",
+  "end": "20240101",
+  "granularity": "monthly",
+  "agent": "user",
+  "series": [
+    {
+      "lang": "uk",
+      "project": "uk.wikipedia",
+      "title": "Астрономія",
+      "qid": "Q333",
+      "found": true,
+      "method": "wikidata",
+      "dropped": {
+        "date": "2024-01-01",
+        "views": 46,
+        "reason": "far-below-recent-levels"
+      },
+      "metrics": {
+        "available": true,
+        "n_points": 24,
+        "date_start": "2022-01-01",
+        "date_end": "2023-12-01",
+        "total_views": 75711,
+        "mean_views": 3154.6,
+        "latest_views": 3576,
+        "growth_pct": 59.1,
+        "growth_window": 3,
+        "growth_first_median": 2247.0,
+        "growth_last_median": 3576.0,
+        "direction": "up",
+        "direction_basis": "yoy",
+        "trend_slope_per_period": 75.79,
+        "trend_r2": 0.053,
+        "yoy_pct": 11.4,
+        "volatility_cv": 0.72,
+        "anomaly_count": 2,
+        "anomalies": [
+          {
+            "date": "2022-09-01",
+            "views": 10494,
+            "x_median": 3.7
+          },
+          {
+            "date": "2023-09-01",
+            "views": 9857,
+            "x_median": 3.5
+          }
+        ],
+        "expected_points": 24,
+        "missing_points": 0,
+        "seasonality": {
+          "peak_month": "Sep",
+          "low_month": "Jul",
+          "strength": 2.79
+        },
+        "share_per_million_mean": null,
+        "bot_share": null,
+        "confidence": {
+          "label": "high",
+          "reasons": [
+            "Choppy series (low R²): no straight-line trend, but `direction` comes from the year-over-year comparison, which still holds.",
+            "Seasonal pattern (peaks Sep, lows Jul): `growth_pct` compares different calendar months, so quote `yoy_pct` as the change."
+          ]
+        }
+      }
+    },
+    {
+      "lang": "pl",
+      "project": "pl.wikipedia",
+      "title": "Astronomia",
+      "qid": "Q333",
+      "found": true,
+      "method": "wikidata",
+      "dropped": {
+        "date": "2024-01-01",
+        "views": 81,
+        "reason": "far-below-recent-levels"
+      },
+      "metrics": {
+        "available": true,
+        "n_points": 24,
+        "date_start": "2022-01-01",
+        "date_end": "2023-12-01",
+        "total_views": 65074,
+        "mean_views": 2711.4,
+        "latest_views": 2746,
+        "growth_pct": -10.1,
+        "growth_window": 3,
+        "growth_first_median": 3237.0,
+        "growth_last_median": 2910.0,
+        "direction": "flat",
+        "direction_basis": "yoy",
+        "trend_slope_per_period": -8.64,
+        "trend_r2": 0.012,
+        "yoy_pct": -2.8,
+        "volatility_cv": 0.2,
+        "anomaly_count": 0,
+        "anomalies": [],
+        "expected_points": 24,
+        "missing_points": 0,
+        "seasonality": {
+          "peak_month": "Jan",
+          "low_month": "Jul",
+          "strength": 0.57
+        },
+        "share_per_million_mean": null,
+        "bot_share": null,
+        "confidence": {
+          "label": "high",
+          "reasons": [
+            "Choppy series (low R²): no straight-line trend, but `direction` comes from the year-over-year comparison, which still holds.",
+            "Seasonal pattern (peaks Jan, lows Jul): `growth_pct` compares different calendar months, so quote `yoy_pct` as the change."
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -2,31 +2,53 @@
 
 ## What the metrics mean (computed in `scripts/analysis.py`)
 
-All metrics are computed on the fetched monthly series **after** the trailing partial period is dropped.
+All metrics are computed on **complete** periods only. The trailing partial period is dropped
+(`trim_partial_tail`), and a monthly `--last` window is snapped back to the 1st of the month, because
+a window starting mid-month makes the API return a truncated first bucket — which would understate
+the very baseline `growth_pct` and `yoy_pct` are measured against.
 
 - **growth_pct** — median of the last window vs the first window, as a %. The window is ~a quarter of
   the series, clamped to 1–3 points. Median (not mean) so a single spike doesn't distort it.
-  `direction` = up / down / flat (|growth| < 10% reads as flat).
+  **Caveat:** unless the series length happens to make the two windows the same calendar months,
+  this compares one season against another. On a seasonal topic that inflates the change or invents
+  one — a flat topic peaking in autumn reads ≈ −34% when the window ends in summer.
 - **yoy_pct** — sum of the trailing 12 months vs the prior 12 months. Needs ≥24 monthly points.
   This cancels seasonality (same months compared), so it's the most reliable "is it growing" number.
+- **direction** (up / down / flat, |change| < 10% reads as flat) and **direction_basis** — the
+  headline verdict and the number behind it. `yoy` when `yoy_pct` exists (preferred: seasonality
+  cannot flip it), otherwise `growth` from `growth_pct`. Report the change using the number the
+  basis names; the two disagreeing is the seasonal artefact, not a second opinion.
 - **trend_slope_per_period** and **trend_r2** — ordinary least-squares fit of views vs time.
   Slope is the per-month change; R² (0–1) is how well a straight line explains the series. High R²
   with a nonzero slope = a clean, believable trend; low R² = choppy, direction uncertain.
 - **volatility_cv** — standard deviation / mean. High = erratic.
 - **anomalies** — robust spike detection via the median absolute deviation (modified z-score > 3.5).
   Spikes are almost always a single news/event burst, not durable interest.
-- **confidence** — a deliberately coarse **high / medium / low** with plain reasons, from:
-  - absolute volume (`<50/mo` → low; `<200/mo` → medium): low traffic is noise-dominated;
-  - series length (`<6` points → low; `<12` → medium): too little history to trust a trend;
-  - completeness (missing months → medium);
+- **confidence** — a deliberately coarse **high / medium / low** with plain reasons. Volume and
+  length thresholds are **monthly-equivalent** (a daily mean is scaled by 30.44), so the same rules
+  judge `--granularity daily` and monthly runs on one scale:
+  - volume (`<50/mo` → low; `<200/mo` → medium): low traffic is noise-dominated;
+  - observations (`<6` points → low): not enough to fit anything;
+  - calendar span (`<12 months` → medium): seasonal effects can't be separated yet — this is why a
+    90-day daily run tops out at medium;
+  - completeness (a missing **month** → medium; for daily, only if >10% of days are absent, since
+    the API simply omits zero-traffic days);
   - anomaly share (>15% of points → medium): interest is event-driven;
-  - trend R² (<0.2) is noted as a weak/uncertain direction;
+  - trend R² (<0.2, on a series that actually varies): **→ medium when `direction_basis` is
+    `growth`**, because the direction is then read off that weak line. When the basis is `yoy` it is
+    reported as "choppy" without a downgrade — the year comparison still holds. A perfectly even
+    series is exempt: its R² is 0 by convention, not by failure;
+  - seasonal growth window (the first and last windows are different calendar months): if
+    seasonality is measurable and `strength ≥ 0.5`, a note to quote `yoy_pct`; if the series is
+    12–23 months (seasonality unmeasurable) and uneven (`cv ≥ 0.25`) → **medium**, since the size
+    and even the sign of `growth_pct` may be seasonal;
   - `bot_share > 0.5` (only with `--check-bots`) → medium: raw traffic is crawler-heavy.
   It is a label, not a p-value — do not over-interpret it.
 
-- **seasonality** (≥24 monthly points) — month-of-year means; reports `peak_month`, `low_month`, and
-  `strength = (max_month_mean − min_month_mean) / overall_mean`. Use it so a recurring seasonal high
-  isn't read as a trend (e.g. astronomy on uk peaks in September, low in July).
+- **seasonality** (≥24 monthly points) — month-of-year means of the **detrended** series (the linear
+  fit is removed first, otherwise a steady rise leaks in and a clean ramp looks seasonal); reports
+  `peak_month`, `low_month`, and `strength = (max_month − min_month) / overall_mean`. Use it so a
+  recurring seasonal high isn't read as a trend (e.g. astronomy on uk peaks in September, low in July).
 - **share_per_million_mean** (only with `--normalize`) — mean of `article_views / edition_total × 1e6`
   over matching periods, using the aggregate endpoint. Compares editions of very different sizes fairly:
   a small edition can hold a *larger share* of attention than a huge one (e.g. "English language" is
@@ -38,6 +60,9 @@ All metrics are computed on the fetched monthly series **after** the trailing pa
 - **Coverage is explicit.** Missing articles are `found:false` (`gap`), never silently substituted.
 - **Partial period removed.** The latest incomplete month is dropped and reported in `dropped`.
 - **Spikes are surfaced.** So a one-off event isn't mistaken for a trend.
+- **Seasonality can't fake a trend.** The headline `direction` comes from the like-for-like year
+  comparison whenever there's enough history, and `direction_basis` says so; when there isn't,
+  confidence drops instead of asserting a seasonal swing as growth.
 - **Fair comparison.** The indexed-to-100 chart and growth % compare *shape*, not raw counts; with
   `--normalize`, share-of-attention (views per million) corrects for edition size directly.
 - **Repeatability.** Responses are cached by request parameters, so refining a query (different period,

@@ -8,3 +8,14 @@ dependencies = [
     "pandas>=3.0.6",
     "requests>=2.34.2",
 ]
+
+[dependency-groups]
+# Dev-only tools for the offline evaluation suite (evals/). Not part of the shipped skill.
+dev = [
+    "pytest>=8.0",
+    "pypdf>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["evals"]
+addopts = "-q"
