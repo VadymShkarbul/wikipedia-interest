@@ -6,22 +6,21 @@ structural check on build_report: a real single-page PDF + PNG (replacing the ol
 """
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 from pypdf import PdfReader
 
 import analysis
 import reporting
+from conftest import monthly
 
 
 def _series_entry(lang, title, views, found=True, share=None):
-    """Build one series entry shaped like wikipop._build_series output (incl. the live df)."""
+    """Build one series entry shaped like wikipop._build_series output (incl. the live data)."""
     if not found:
         return {"lang": lang, "title": None, "found": False, "metrics": {"available": False}}
-    dates = pd.date_range("2022-01-01", periods=len(views), freq="MS")
-    df = pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
-    metrics = analysis.analyze_series(df, share=share)
-    return {"lang": lang, "title": title, "found": True, "df": df, "metrics": metrics}
+    data = monthly(views)
+    metrics = analysis.analyze_series(data, share=share)
+    return {"lang": lang, "title": title, "found": True, "data": data, "metrics": metrics}
 
 
 def test_findings_recommends_strongest_rising_higher_volume():

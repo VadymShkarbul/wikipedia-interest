@@ -106,10 +106,10 @@ def build_findings(topic: str, series_list: list, note: Optional[str]) -> str:
 def _plot_raw(ax, series_list):
     plotted = False
     for s in series_list:
-        df = s.get("df")
-        if df is None or df.empty:
+        data = s.get("data")
+        if data is None or data.empty:
             continue
-        (line,) = ax.plot(df["date"], df["views"], marker="o", ms=2.5, lw=1.4, label=f"{s['lang']}: {s['title']}")
+        (line,) = ax.plot(data.dates, data.views, marker="o", ms=2.5, lw=1.4, label=f"{s['lang']}: {s['title']}")
         top_anoms = sorted(s.get("metrics", {}).get("anomalies", []), key=lambda a: a["views"], reverse=True)[:3]
         for an in top_anoms:
             ax.annotate("spike", xy=(dt.datetime.strptime(an["date"], "%Y-%m-%d"), an["views"]),
@@ -128,13 +128,14 @@ def _plot_raw(ax, series_list):
 def _plot_indexed(ax, series_list):
     plotted = False
     for s in series_list:
-        df = s.get("df")
-        if df is None or df.empty:
+        data = s.get("data")
+        if data is None or data.empty:
             continue
-        base = df["views"].iloc[0]
+        base = data.views[0]
         if base <= 0:
-            base = df["views"][df["views"] > 0].iloc[0] if (df["views"] > 0).any() else 1
-        ax.plot(df["date"], df["views"] / base * 100.0, lw=1.4, label=s["lang"])
+            positive = [v for v in data.views if v > 0]
+            base = positive[0] if positive else 1
+        ax.plot(data.dates, [v / base * 100.0 for v in data.views], lw=1.4, label=s["lang"])
         plotted = True
     ax.axhline(100, color="gray", lw=0.8, ls="--", alpha=0.6)
     ax.set_title("Indexed to 100 at start (compare shape, not size)", fontsize=9)

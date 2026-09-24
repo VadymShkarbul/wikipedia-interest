@@ -2,10 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "requests>=2.31",
-#   "pandas>=2.0",
-#   "numpy>=1.24",
-#   "matplotlib>=3.7",
+#   "matplotlib>=3.7",   # only needed by `report --format pdf`; resolve/analyze are stdlib-only
 # ]
 # ///
 """wikipop — analyze Wikipedia pageviews as a proxy for audience interest.
@@ -23,13 +20,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import calendar
+import datetime as dt
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import pandas as pd  # noqa: E402
 
 import analysis as A  # noqa: E402
 import wiki_api as W  # noqa: E402
@@ -48,6 +45,16 @@ def _parse_langs(s: str) -> list[str]:
     return [x.strip() for x in s.split(",") if x.strip()]
 
 
+def _shift_back(d: "dt.date", n: int, unit: str) -> "dt.date":
+    """`d` minus n years/months/days. Day-of-month is clamped (Mar 31 - 1m -> Feb 28/29)."""
+    if unit == "d":
+        return d - dt.timedelta(days=n)
+    months = n * 12 if unit == "y" else n
+    year, month0 = divmod((d.year * 12 + d.month - 1) - months, 12)
+    month = month0 + 1
+    return dt.date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
 def _period(args) -> tuple[str, str, str]:
     """Resolve (start_YYYYMMDD, end_YYYYMMDD, label) from --last or --start/--end."""
     if args.start and args.end:
@@ -57,17 +64,16 @@ def _period(args) -> tuple[str, str, str]:
     if not m:
         _fail(f"bad --last '{last}', use e.g. 2y, 24m, 90d")
     n, unit = int(m.group(1)), m.group(2)
-    end = pd.Timestamp.today().normalize()
-    offset = {"y": pd.DateOffset(years=n), "m": pd.DateOffset(months=n), "d": pd.DateOffset(days=n)}[unit]
-    start = end - offset
+    end = dt.date.today()
+    start = _shift_back(end, n, unit)
     # A monthly window starting mid-month gets a TRUNCATED first bucket back (the API counts only
     # from the start date), which understates the baseline that growth_pct and yoy_pct measure
     # against. Snap to the 1st so `--last 2y` means the last 2 years of *complete* months; the
     # trailing partial month is dropped separately by trim_partial_tail.
     if getattr(args, "granularity", "monthly") == "monthly":
         start = start.replace(day=1)
-    if start < pd.Timestamp("2015-07-01"):
-        start = pd.Timestamp("2015-07-01")
+    if start < dt.date(2015, 7, 1):
+        start = dt.date(2015, 7, 1)
     return start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), f"last {last}"
 
 
@@ -81,37 +87,37 @@ def _build_series(topic, langs, start, end, granularity, access, agent, cache_di
         entry = {
             "lang": lang, "project": W.project_for_lang(lang), "title": info["title"],
             "qid": info["qid"], "found": info["found"], "method": info["method"],
-            "df": None, "dropped": None, "metrics": {"available": False},
+            "data": None, "dropped": None, "metrics": {"available": False},
         }
         if info["found"] and info["title"]:
-            df = W.fetch_pageviews(entry["project"], info["title"], start, end,
-                                   granularity, access, agent, cache_dir)
-            df, dropped = W.trim_partial_tail(df, granularity)
-            entry["df"] = df
+            data = W.fetch_pageviews(entry["project"], info["title"], start, end,
+                                     granularity, access, agent, cache_dir)
+            data, dropped = W.trim_partial_tail(data, granularity)
+            entry["data"] = data
             entry["dropped"] = dropped
 
             share = None
-            if normalize and not df.empty:
+            if normalize and not data.empty:
                 agg = W.fetch_aggregate_pageviews(entry["project"], start, end,
                                                   granularity, access, agent, cache_dir)
-                share = A.share_per_million(df, agg)
+                share = A.share_per_million(data, agg)
 
             bot_share = None
-            if check_bots and not df.empty:
-                all_df = W.fetch_pageviews(entry["project"], info["title"], start, end,
-                                           granularity, access, "all-agents", cache_dir)
-                bot_share = A.bot_share(df, all_df)
+            if check_bots and not data.empty:
+                all_data = W.fetch_pageviews(entry["project"], info["title"], start, end,
+                                             granularity, access, "all-agents", cache_dir)
+                bot_share = A.bot_share(data, all_data)
 
-            entry["metrics"] = A.analyze_series(df, granularity, share=share, bot_share=bot_share)
+            entry["metrics"] = A.analyze_series(data, granularity, share=share, bot_share=bot_share)
         series.append(entry)
     return series, resolved
 
 
 def _series_json(series: list) -> list:
-    """Strip DataFrames for JSON output."""
+    """Strip the raw Series objects for JSON output."""
     out = []
     for s in series:
-        item = {k: v for k, v in s.items() if k != "df"}
+        item = {k: v for k, v in s.items() if k != "data"}
         out.append(item)
     return out
 
@@ -128,19 +134,18 @@ def cmd_pageviews(args):
     project = args.project or (W.project_for_lang(args.lang) if args.lang else None)
     if not project:
         _fail("provide --project or --lang")
-    df = W.fetch_pageviews(project, args.article, args.start, args.end,
-                           args.granularity, args.access, args.agent, args.cache_dir)
+    data = W.fetch_pageviews(project, args.article, args.start, args.end,
+                             args.granularity, args.access, args.agent, args.cache_dir)
     if not args.keep_partial:
-        df, dropped = W.trim_partial_tail(df, args.granularity)
+        data, dropped = W.trim_partial_tail(data, args.granularity)
     else:
         dropped = None
     _emit({
         "project": project, "article": args.article,
         "granularity": args.granularity, "access": args.access, "agent": args.agent,
         "dropped_partial": dropped,
-        "series": [{"date": d.strftime("%Y-%m-%d"), "views": int(v)}
-                   for d, v in zip(df["date"], df["views"])],
-        "metrics": A.analyze_series(df, args.granularity),
+        "series": data.to_records(),
+        "metrics": A.analyze_series(data, args.granularity),
     })
 
 

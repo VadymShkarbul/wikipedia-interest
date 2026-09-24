@@ -67,18 +67,20 @@ def test_monthly_last_window_snaps_to_whole_months():
     That silently understates the baseline `growth_pct` and `yoy_pct` are measured against, so a
     monthly `--last` window must begin on the 1st.
     """
-    import pandas as pd
+    import datetime as dt
+    today = dt.date.today()
     start, _, _ = _period("2y", "monthly")
     assert start[-2:] == "01", start
-    expected = (pd.Timestamp.today().normalize() - pd.DateOffset(years=2)).replace(day=1)
-    assert start == expected.strftime("%Y%m%d")
+    # Two years back, snapped to the 1st: with the day forced to 1 there is no clamping to
+    # reason about, so this oracle is independent of the implementation's date arithmetic.
+    assert start == dt.date(today.year - 2, today.month, 1).strftime("%Y%m%d")
 
 
 def test_daily_last_window_is_not_snapped():
     """Daily buckets aren't truncated by a mid-month start, so the window stays exact."""
-    import pandas as pd
+    import datetime as dt
     start, _, _ = _period("90d", "daily")
-    assert start == (pd.Timestamp.today().normalize() - pd.DateOffset(days=90)).strftime("%Y%m%d")
+    assert start == (dt.date.today() - dt.timedelta(days=90)).strftime("%Y%m%d")
 
 
 def test_cli_error_contract_is_json_not_traceback(tmp_path):
