@@ -65,8 +65,8 @@ Languages are Wikipedia edition codes: `uk`, `pl`, `cs`, `en`, `de`, `es`, … c
    **You write the `findings` narrative** — what the numbers mean and what to do next, in the user's
    language. The tool appends the confidence label and leading caveat for every edition itself, so
    the file can't be forwarded without them. Don't invent numbers; base the narrative on the analyze
-   output. The result is a self-contained `.html` one-pager; tell the user where it was written.
-   (`--format pdf` on the CLI produces a PDF instead, but needs matplotlib installed.)
+   output. The result is a self-contained `.html` one-pager; tell the user where it was written,
+   and that opening it and choosing Print → Save as PDF gives them a one-page PDF to send on.
 
 ## How to read the output
 

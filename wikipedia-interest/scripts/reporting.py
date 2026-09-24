@@ -1,8 +1,9 @@
 """Reporting: render a shareable one-pager as self-contained HTML with inline SVG charts.
 
-Standard library only — no matplotlib, no fonts to ship. SVG/HTML text is Unicode natively, so
+Standard library only — nothing to install, no fonts to ship. SVG/HTML text is Unicode natively, so
 Cyrillic and PL/CZ article titles render without any font handling. `@page { size: A4 }` keeps
-"one page" meaningful when the reader prints to PDF.
+"one page" meaningful: any browser's Print → Save as PDF produces the shareable PDF, which is why
+this skill no longer carries a PDF renderer of its own.
 
 Division of labour: the *model* writes the narrative (`findings`), because that is the one part of
 this skill a language model does better than an if/elif ladder. The *code* appends the confidence
@@ -58,18 +59,6 @@ def trust_block(series_list: list) -> list[str]:
             f"~{m['mean_views']:.0f} views/mo; confidence {conf['label']}.{reason}"
         )
     return lines
-
-
-def findings_text(series_list: list, findings: Optional[str]) -> str:
-    """Model narrative + the mechanical trust lines, as plain text (used by the PDF renderer)."""
-    parts = []
-    if findings and findings.strip():
-        parts.append(findings.strip())
-    else:
-        parts.append("(No narrative supplied — the figures and caveats below stand on their own.)")
-    parts.append("")
-    parts.extend(trust_block(series_list))
-    return "\n".join(parts)
 
 
 # --- SVG charting ------------------------------------------------------------

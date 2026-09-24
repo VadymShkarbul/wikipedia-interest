@@ -75,7 +75,8 @@ python3 scripts/wikipop.py report --topic "astronomy" --langs uk,pl --last 2y \
 ```
 
 **You write `findings`.** The confidence label and leading caveat for each edition are appended by
-the tool, so the file can't be shared without them. Add `--format pdf` (needs matplotlib) for a PDF.
+the tool, so the file can't be shared without them. The output is one self-contained HTML file; open
+it and Print → Save as PDF for a one-page PDF to send on.
 
 ## Handy variations
 - Quantify crawler traffic: `check_bots=True` / `--check-bots`.

@@ -1,8 +1,6 @@
-# The skill's core needs NOTHING here: `resolve` and `analyze` and the default HTML report
-# run on the Python 3.12 standard library alone. These are the two optional paths.
-
-# Typed MCP tools instead of shell commands (scripts/../server.py):
+# The skill needs NOTHING here. `resolve`, `analyze` and the HTML report all run on the
+# Python 3.12 standard library alone, and the report is printed to PDF by the browser.
+#
+# The single optional path is the MCP server (server.py), which swaps shell commands for
+# typed tools. Its dependency is declared in that file's PEP 723 header, so `uv run` handles it:
 #   mcp>=2,<3
-
-# PDF output instead of the default self-contained HTML (`report --format pdf`):
-#   matplotlib>=3.7

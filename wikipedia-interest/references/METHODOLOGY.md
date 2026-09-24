@@ -85,7 +85,8 @@ the very baseline `growth_pct` and `yoy_pct` are measured against.
 Delivered so far: multi-language resolution + candidate disambiguation (`--qid`), share-of-attention
 normalization (`--normalize`), bot-inflation diagnostic (`--check-bots`), seasonality note. In v2 the
 analysis engine dropped pandas/numpy/requests for the standard library, the report became
-self-contained HTML with inline SVG (matplotlib is now an optional PDF extra), the narrative moved to
+self-contained HTML with inline SVG (no renderer dependency at all — browsers print it to PDF),
+the narrative moved to
 the model while the confidence caveat stayed in code, and a typed MCP tool surface replaced the need
 for shell access. Still ahead, in rough order of value:
 

@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = [
-#   "matplotlib>=3.7",   # only needed by `report --format pdf`; resolve/analyze are stdlib-only
-# ]
+# dependencies = []   # intentionally empty: this CLI runs on the standard library alone
 # ///
 """wikipop — analyze Wikipedia pageviews as a proxy for audience interest.
 
 Agent-facing CLI. Every command prints ONE JSON object to stdout; errors are JSON too (never
-tracebacks). Needs no installed packages (except `--format pdf`). From the skill directory:
+tracebacks). Needs no installed packages at all. From the skill directory:
   `python3 scripts/wikipop.py <cmd> ...`
 
 Commands:
   resolve    topic + languages -> exact article title per language (flags coverage gaps)
   pageviews  low-level single-article time series (iteration/debug)
   analyze    topic + languages -> metrics + confidence JSON (fast; no files)
-  report     analyze + write a shareable one-pager (HTML by default, PDF optional)
+  report     analyze + write a shareable one-page HTML report (print to PDF to share)
 """
 from __future__ import annotations
 
@@ -183,20 +181,9 @@ def cmd_report(args):
     series, resolved = _build_series(args.topic, langs, start, end, args.granularity,
                                      args.access, args.agent, args.cache_dir,
                                      qid=args.qid, normalize=args.normalize, check_bots=args.check_bots)
-    if args.format == "pdf":
-        # The only third-party dependency in the skill, imported only when actually asked for.
-        try:
-            import report_pdf as P
-        except ImportError:
-            _fail("--format pdf needs matplotlib (pip install 'matplotlib>=3.7'); "
-                  "--format html is the stdlib default")
-        out = args.out or "report.pdf"
-        files = P.build_report(args.topic, label, series, out,
-                               findings=args.findings, normalized=args.normalize)
-    else:
-        out = args.out or "report.html"
-        files = R.build_report(args.topic, label, series, out,
-                               findings=args.findings, normalized=args.normalize)
+    out = args.out or "report.html"
+    files = R.build_report(args.topic, label, series, out,
+                           findings=args.findings, normalized=args.normalize)
     _emit({"topic": args.topic, "qid": resolved["qid"], "candidates": resolved["candidates"],
            "period": label, "start": start, "end": end,
            "files": files, "series": _series_json(series)})
@@ -247,9 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     srp.add_argument("--langs", required=True)
     srp.add_argument("--last", help="e.g. 2y, 24m, 90d (default 2y)")
     srp.add_argument("--start"); srp.add_argument("--end")
-    srp.add_argument("--out", help="output path (default report.html, or report.pdf with --format pdf)")
-    srp.add_argument("--format", choices=["html", "pdf"], default="html",
-                     help="html (default, no dependencies) or pdf (needs matplotlib)")
+    srp.add_argument("--out", help="output path for the HTML one-pager (default report.html)")
     srp.add_argument("--findings", help="YOUR narrative for the report's Findings section. "
                                         "Confidence caveats are appended automatically.")
     common(srp); concept(srp); srp.set_defaults(func=cmd_report)

@@ -5,16 +5,19 @@ This folder **is** the skill. Copy it into an agent's skills directory and resta
 ## Prerequisites
 - **Python 3.12+**
 - Internet access to the Wikimedia APIs. **No API key.**
-- **uv** ([install](https://docs.astral.sh/uv/)) — only if you want the MCP server or PDF output.
-  The CLI's `resolve` and `analyze` run on the standard library alone.
+- **uv** ([install](https://docs.astral.sh/uv/)) — only if you want the MCP server. The CLI runs on
+  the standard library alone.
 
 ## What each path costs
 
 | Path | Extra packages | Needs a Bash grant? |
 |---|---|---|
-| CLI — `resolve`, `analyze`, `report` (HTML) | **none** | yes |
+| CLI — `resolve`, `analyze`, `report` | **none** | yes |
 | MCP server — typed tools | `mcp` (~27 MB) | **no** |
-| `report --format pdf` | `matplotlib` (~61 MB with fontTools/PIL) | yes |
+
+The report is a self-contained HTML one-pager. To share it as a PDF, open it and choose
+Print → Save as PDF — every browser does this, and it honours the `@page { size: A4 }` rule, so the
+skill ships no PDF renderer and no dependency for one.
 
 ## Claude Code
 

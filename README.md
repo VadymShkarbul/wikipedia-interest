@@ -17,7 +17,7 @@ Two design principles:
 | | v1 | v2 |
 |---|---|---|
 | Dependencies to analyze | pandas + numpy + requests + matplotlib (**~135 MB**) | **none** (standard library) |
-| Report | PDF via matplotlib | self-contained HTML + inline SVG; PDF optional |
+| Report | PDF via matplotlib | self-contained HTML + inline SVG (print to PDF) |
 | Interface | shell command via Bash | typed MCP tools (Bash no longer required) |
 | Findings text | 65 lines of `if/elif` | written by the model, caveats appended by code |
 | Cache location | whatever directory the agent was in | next to the code |
@@ -30,7 +30,7 @@ wikipedia-interest/        # the skill (self-contained, this is what you ship)
 ├── server.py              # MCP server: typed tools, no shell access needed
 ├── .mcp.json              # declares that server
 ├── .claude-plugin/        # plugin.json — lets the skill folder bundle the server
-├── scripts/               # wikipop.py CLI + series / wiki_api / analysis / reporting / report_pdf
+├── scripts/               # wikipop.py CLI + series / wiki_api / analysis / reporting
 ├── references/            # API.md, METHODOLOGY.md
 └── examples.md
 evals/                     # offline deterministic eval suite (dev only)
@@ -41,8 +41,7 @@ pes_task.md                # the original task brief
 ## Prerequisites
 - **Python 3.12+**
 - Internet access to the Wikimedia APIs. **No API key.**
-- [uv](https://docs.astral.sh/uv/) only for the optional paths (MCP server, PDF output) and for
-  development.
+- [uv](https://docs.astral.sh/uv/) only for the optional MCP server and for development.
 
 ## Quick start
 
@@ -61,7 +60,7 @@ python3 wikipedia-interest/scripts/wikipop.py resolve --topic "mercury" --langs 
 # 2. analyze — metrics + confidence, no files written
 python3 wikipedia-interest/scripts/wikipop.py analyze --topic "astronomy" --langs uk,pl --last 2y
 
-# 3. report — a self-contained one-page HTML; you supply the narrative
+# 3. report — a self-contained one-page HTML; you supply the narrative (print it to PDF to share)
 python3 wikipedia-interest/scripts/wikipop.py report --topic "astronomy" --langs uk,pl --last 2y \
   --out astro.html --findings "Ukrainian interest is up 11% YoY with a September school peak."
 

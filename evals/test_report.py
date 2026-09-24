@@ -6,8 +6,8 @@ Two things matter in the artifact the user forwards to a colleague:
     label and its leading reason itself. A report that travels without its caveat is the failure
     mode this whole skill exists to prevent.
   * the ARTIFACT — a real self-contained HTML one-pager that renders non-Latin titles correctly.
-
-The optional matplotlib PDF renderer is checked separately, and skipped when it isn't installed.
+    It is the only output format: a browser's Print → Save as PDF makes the shareable PDF, so the
+    skill ships no renderer and no dependency for it.
 """
 from __future__ import annotations
 
@@ -118,20 +118,3 @@ def test_build_report_handles_gap_only_without_crashing(tmp_path):
     reporting.build_report("nothing", "last 2y", [_series_entry("xx", None, [], found=False)], str(out))
     text = out.read_text(encoding="utf-8")
     assert "no data" in text and "coverage gap" in text
-
-
-# --- the optional PDF renderer ----------------------------------------------
-
-def test_pdf_renderer_still_produces_one_page(tmp_path):
-    pytest.importorskip("matplotlib", reason="PDF output is an optional extra")
-    from pypdf import PdfReader
-    import report_pdf
-
-    entries = [_series_entry("uk", "Астрономія", list(range(300, 300 + 24 * 10, 10)))]
-    out = tmp_path / "report.pdf"
-    files = report_pdf.build_report("astronomy", "last 2y", entries, str(out),
-                                    findings="Model-written narrative.")
-    assert out.exists() and out.stat().st_size > 5000
-    assert PdfReader(str(out)).pages.__len__() == 1
-    from pathlib import Path
-    assert Path(files["png"]).exists()

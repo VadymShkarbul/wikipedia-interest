@@ -55,19 +55,6 @@ def test_cli_report_writes_html_offline(warm_cache, tmp_path):
     assert "confidence" in text           # the computed caveat travels with it
 
 
-def test_cli_report_pdf_is_opt_in(warm_cache, tmp_path):
-    if warm_cache is None:
-        pytest.skip("no recorded fixtures; run `uv run evals/fixtures/record.py`")
-    pytest.importorskip("matplotlib", reason="PDF output is an optional extra")
-    out_pdf = tmp_path / "report.pdf"
-    proc = _run([*REPORT_ARGV, "--format", "pdf", "--out", str(out_pdf)], warm_cache)
-    assert proc.returncode == 0, proc.stderr
-    payload = json.loads(proc.stdout)
-    assert payload["files"]["pdf"] == str(out_pdf)
-    assert out_pdf.exists() and out_pdf.stat().st_size > 5000
-    assert Path(payload["files"]["png"]).exists()
-
-
 # --- window construction (no network: pure argument handling) --------------------------------
 
 def _period(last, granularity):

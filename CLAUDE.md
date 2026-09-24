@@ -28,8 +28,7 @@ wikipedia-interest/          # THE SKILL — self-contained, portable, this is w
 │   ├── series.py            # Series(dates, views) — the one data structure; replaces DataFrame
 │   ├── wiki_api.py          # data layer: title resolution + pageview fetch + on-disk cache (urllib)
 │   ├── analysis.py          # pure stats: growth/trend/seasonality/anomalies/confidence
-│   ├── reporting.py         # stdlib -> self-contained HTML + inline SVG (the default)
-│   └── report_pdf.py        # OPTIONAL matplotlib -> one-page PDF + PNG (--format pdf)
+│   └── reporting.py         # stdlib -> self-contained HTML + inline SVG (browsers print it to PDF)
 ├── references/              # API.md (endpoints), METHODOLOGY.md (how stats are computed)
 ├── examples.md              # canonical questions -> exact commands
 └── requirements.txt         # deps for pip users
@@ -40,12 +39,11 @@ pyproject.toml / uv.lock     # repo dev environment (uv)
 
 ## Running things
 
-The skill's core needs **no third-party packages** — `resolve`, `analyze` and the default HTML report
-run on the Python 3.12 standard library. uv is only for development and the two optional paths
-(`mcp` for the server, `matplotlib` for `--format pdf`).
+The skill has **no runtime dependencies at all** — `resolve`, `analyze` and the HTML report run on
+the Python 3.12 standard library. uv is only for development and for the optional MCP server.
 
 ```bash
-uv sync --group dev                              # dev environment (pytest, mcp, matplotlib, pypdf)
+uv sync --group dev                              # dev environment (pytest, mcp)
 # CLI (run from repo root during dev) — plain python3 is enough:
 python3 wikipedia-interest/scripts/wikipop.py analyze --topic "astronomy" --langs uk --last 2y
 ```
@@ -78,13 +76,14 @@ Verify changes three ways:
   Anything printed to stdout that isn't the JSON object will break the agent parsing it.
 - **Module boundaries:** `series.py` = the `Series(dates, views)` data type (no I/O, no imports);
   `wiki_api.py` = all network + caching (no printing/argparse); `analysis.py` = pure functions over a
-  `Series` (no I/O); `reporting.py` / `report_pdf.py` = rendering only; `wikipop.py` = argparse +
+  `Series` (no I/O); `reporting.py` = rendering only; `wikipop.py` = argparse +
   orchestration + JSON; `server.py` = MCP adapter only, no logic of its own. Keep new logic in the
   layer it belongs to.
-- **The core stays dependency-free.** `series`, `wiki_api`, `analysis` and `reporting` must import
+- **The skill stays dependency-free.** `series`, `wiki_api`, `analysis` and `reporting` must import
   nothing outside the standard library — that is the install story, and `evals` enforce it by running
-  the CLI under `python3 -I -S`. Anything heavier (parquet, STL, a new renderer) goes behind an
-  optional extra the way `report_pdf.py` does.
+  the CLI under `python3 -I -S`. Anything heavier (parquet, STL, a chart library, a PDF renderer) does
+  not belong in the skill; `server.py` and its `mcp` dependency are the one deliberate exception, and
+  they are optional. The report is HTML precisely so the browser, not this repo, renders the PDF.
 - **Confidence is a first-class output.** Analysis emits a `confidence` label + reasons; the whole
   point is that the tool judges trustworthiness so the model doesn't have to. Preserve this when
   changing metrics, and update `references/METHODOLOGY.md` if you change how any metric is computed.
@@ -113,4 +112,4 @@ Verify changes three ways:
   keep it accurate and concise (a small model reads it every time). The CLI and the MCP tools are two
   front doors onto one engine; changing one without the other makes the docs lie.
 - Keep the skill folder self-contained and portable — no absolute paths, no repo-specific assumptions.
-- Don't commit runtime artifacts (`report.html/pdf/png`, `.wikipop_cache/`) — already gitignored.
+- Don't commit runtime artifacts (`report.html`, `.wikipop_cache/`) — already gitignored.

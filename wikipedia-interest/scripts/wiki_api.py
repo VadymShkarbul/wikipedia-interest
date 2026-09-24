@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from statistics import median
 from typing import Optional
 
 from series import Series
@@ -336,8 +337,6 @@ def trim_partial_tail(s: Series, granularity: str = "monthly") -> tuple:
     """
     if s is None or len(s) < 3:
         return s, None
-
-    from statistics import median
 
     last_date = s.dates[-1]
     last_val = float(s.views[-1])
