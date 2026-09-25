@@ -9,33 +9,12 @@ is designed to prove, so the table stays robust to unrelated implementation deta
 """
 from __future__ import annotations
 
-import datetime as dt
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "wikipedia-interest" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from series import Series
-
-
-
-def _month_starts(n, start="2022-01-01"):
-    """n consecutive first-of-month dates beginning at `start`."""
-    y, m = int(start[:4]), int(start[5:7])
-    out = []
-    for _ in range(n):
-        out.append(dt.date(y, m, 1))
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    return out
-
-
-def _monthly(views, start="2022-01-01") -> Series:
-    return Series(_month_starts(len(views), start), [int(v) for v in views])
-
-
-def _ramp(n, lo, hi, start="2022-01-01") -> Series:
-    step = (hi - lo) / (n - 1) if n > 1 else 0
-    return _monthly([round(lo + step * i) for i in range(n)], start=start)
+from helpers import monthly as _monthly, ramp as _ramp  # noqa: E402
 
 
 # --- series builders for the trickier cases ---------------------------------

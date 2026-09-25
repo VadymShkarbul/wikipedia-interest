@@ -17,13 +17,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-SKILL = REPO / "wikipedia-interest"
+SKILL = Path(__file__).resolve().parents[2]
 CLI = SKILL / "scripts" / "wikipop.py"
 CACHE = Path(__file__).resolve().parent / "cache"
-GOLDEN = REPO / "evals" / "golden"
+GOLDEN = SKILL / "evals" / "golden"
 
-sys.path.insert(0, str(REPO / "evals"))
+sys.path.insert(0, str(SKILL / "evals"))
 from cli_cases import GOLDEN_CASES  # noqa: E402
 
 

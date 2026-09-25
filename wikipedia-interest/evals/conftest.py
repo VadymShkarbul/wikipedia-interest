@@ -9,7 +9,6 @@ re-implemented here. Network is replaced by two fixture mechanisms:
 """
 from __future__ import annotations
 
-import datetime as dt
 import json
 import os
 import shutil
@@ -19,50 +18,19 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPTS = REPO / "wikipedia-interest" / "scripts"
+SKILL = Path(__file__).resolve().parent.parent
+SCRIPTS = SKILL / "scripts"
 FIXTURE_CACHE = Path(__file__).resolve().parent / "fixtures" / "cache"
 
 # Make the skill's modules importable exactly as the CLI does (scripts/ on sys.path).
 sys.path.insert(0, str(SCRIPTS))
 
-import analysis  # noqa: E402
 import wiki_api  # noqa: E402
-from series import Series  # noqa: E402
 
 
 # --- synthetic series builders ----------------------------------------------
-
-
-def _month_starts(n, start="2022-01-01"):
-    """n consecutive first-of-month dates beginning at `start`."""
-    y, m = int(start[:4]), int(start[5:7])
-    out = []
-    for _ in range(n):
-        out.append(dt.date(y, m, 1))
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    return out
-
-
-def monthly(views, start="2022-01-01") -> Series:
-    """Build a monthly Series(dates, views) from a list of view counts."""
-    return Series(_month_starts(len(views), start), [int(v) for v in views])
-
-
-def ramp(n, lo, hi, start="2022-01-01") -> Series:
-    """A clean linear ramp from `lo` to `hi` over n monthly points."""
-    step = (hi - lo) / (n - 1) if n > 1 else 0
-    return monthly([round(lo + step * i) for i in range(n)], start=start)
-
-
-@pytest.fixture
-def mk_monthly():
-    return monthly
-
-
-@pytest.fixture
-def mk_ramp():
-    return ramp
+# Defined in helpers.py so cases/analysis_cases.py (a plain module) can share them.
+from helpers import month_starts, monthly, ramp  # noqa: E402,F401
 
 
 # --- cache helpers (offline network replacement) ----------------------------

@@ -9,6 +9,11 @@ This folder **is** the skill. Copy it into an agent's skills directory and resta
 There are no packages to install. `resolve`, `analyze`, `report` and `pageviews` all run on the
 Python standard library, so the whole install is one `cp -R`.
 
+The folder also carries `evals/` and `verify/` — the project's test suite and its cheap-model
+harness. They are here because the task brief requires all of the project's own code to live in the
+skill directory. They are **developer tooling**: nothing loads or runs them when an agent uses the
+skill, and they add no runtime dependency. Delete them if you want a leaner copy.
+
 The report is a self-contained HTML one-pager. To share it as a PDF, open it and choose
 Print → Save as PDF — every browser does this, and it honours the `@page { size: A4 }` rule, so the
 skill ships no PDF renderer and no dependency for one.

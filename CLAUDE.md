@@ -28,8 +28,9 @@ wikipedia-interest/          # THE SKILL — self-contained, portable, this is w
 │   └── reporting.py         # stdlib -> self-contained HTML + inline SVG (browsers print it to PDF)
 ├── references/              # API.md (endpoints), METHODOLOGY.md (how stats are computed)
 ├── examples.md              # canonical questions -> exact commands
-└── requirements.txt         # states that there are none
-verify/e2e_openrouter.py     # dev-only cheap-model E2E harness (NOT part of the skill)
+├── requirements.txt         # states that there are none
+├── evals/                   # offline deterministic eval suite (dev only, never loaded at runtime)
+└── verify/e2e_openrouter.py # cheap-model E2E harness (dev only; needs an OpenRouter key)
 pes_task.md                  # original task brief (Ukrainian)
 pyproject.toml / uv.lock     # repo dev environment (uv)
 ```
@@ -37,7 +38,9 @@ pyproject.toml / uv.lock     # repo dev environment (uv)
 ## Running things
 
 The skill has **no runtime dependencies at all** — `resolve`, `analyze` and the HTML report run on
-the Python 3.12 standard library. uv is only for development (the eval suite).
+the Python 3.12 standard library. uv is only for development (the eval suite). `evals/` and
+`verify/` live *inside* the skill folder, because the brief requires all of the project's own code
+to be in the skill directory; they are dev-only and an agent never loads them.
 
 ```bash
 uv sync --group dev                              # dev environment (pytest)
@@ -54,17 +57,18 @@ Verify changes three ways:
 1. **Offline eval suite** (fast, deterministic, no network) — the primary check:
    ```bash
    uv sync --group dev
-   uv run pytest evals/
+   uv run pytest
    ```
-   Covers analysis correctness, trust judgments, report quality, and an end-to-end CLI golden
-   against recorded fixtures — replayed under `python3 -I -S`, which is what enforces the
-   dependency-free invariant. See [evals/README.md](evals/README.md); refresh fixtures with
-   `uv run evals/fixtures/record.py` (the only network-touching part).
+   Covers analysis correctness, trust judgments, report quality, the `Series` type, the cache and
+   retry policy, and an end-to-end CLI golden against recorded fixtures — replayed under
+   `python3 -I -S`, which is what enforces the dependency-free invariant. See
+   [wikipedia-interest/evals/README.md](wikipedia-interest/evals/README.md); refresh fixtures with
+   `uv run wikipedia-interest/evals/fixtures/record.py` (the only network-touching part).
 2. Run the CLI directly and inspect the JSON.
 3. The end-to-end cheap-model harness (live; needs an OpenRouter key):
    ```bash
    export OPENROUTER_API_KEY=sk-or-...
-   uv run verify/e2e_openrouter.py
+   uv run wikipedia-interest/verify/e2e_openrouter.py
    ```
 
 ## Conventions & invariants (don't break these)
@@ -113,3 +117,6 @@ Verify changes three ways:
   CLI actually accepts.
 - Keep the skill folder self-contained and portable — no absolute paths, no repo-specific assumptions.
 - Don't commit runtime artifacts (`report.html`, `.wikipop_cache/`) — already gitignored.
+- **Tests go in `wikipedia-interest/evals/`, not at the repo root.** The brief requires all of the
+  project's own code to live in the skill directory. Shared `Series` builders belong in
+  `evals/helpers.py` — never import `conftest` from a test, and never duplicate a builder.

@@ -3,3 +3,9 @@
 # `resolve`, `analyze`, `report` and `pageviews` all run on the Python 3.12 standard library:
 # urllib for the Wikimedia APIs, json for I/O, and hand-rolled SVG for the charts. The report is
 # HTML precisely so the browser, not this package, renders the PDF.
+#
+# The dev tooling that ships alongside the skill is not a runtime dependency of it:
+#   evals/   needs pytest        (`uv sync --group dev` at the repo root)
+#   verify/  needs requests      (declared in that script's PEP 723 header; `uv run` handles it)
+# Neither is imported by anything under scripts/, and the evals enforce that by running the CLI
+# under `python3 -I -S` with site-packages disabled.

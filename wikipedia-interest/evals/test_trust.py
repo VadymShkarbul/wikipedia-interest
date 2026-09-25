@@ -12,7 +12,7 @@ import pytest
 
 import analysis
 import wiki_api
-from conftest import monthly as _mk_monthly
+from helpers import monthly as _mk_monthly
 from series import Series
 
 

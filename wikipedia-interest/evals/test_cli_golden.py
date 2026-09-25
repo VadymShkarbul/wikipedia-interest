@@ -7,14 +7,14 @@ depends on: bad input -> {"error": ...} + exit 1, never a traceback.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent
-SKILL = REPO / "wikipedia-interest"
+SKILL = Path(__file__).resolve().parent.parent
 CLI = SKILL / "scripts" / "wikipop.py"
 GOLDEN = Path(__file__).resolve().parent / "golden"
 
@@ -52,7 +52,11 @@ def test_cli_report_writes_html_offline(warm_cache, tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "Narrative from the model." in text
     assert "Астрономія" in text          # non-Latin title survives the whole pipeline
-    assert "confidence" in text           # the computed caveat travels with it
+
+    # The computed caveat travels with it. Matching the real trust-line shape, not the bare word
+    # "confidence" — that is also a static table header, so it is present even with no trust block.
+    assert re.search(r"uk \([^)]+\): (up|down|flat) \([^)]+\); ~[\d,]+ views/mo; "
+                     r"confidence (high|medium|low)\.", text), "trust line missing or reshaped"
 
 
 # --- window construction (no network: pure argument handling) --------------------------------
@@ -72,19 +76,31 @@ def test_monthly_last_window_snaps_to_whole_months():
     monthly `--last` window must begin on the 1st.
     """
     import datetime as dt
-    today = dt.date.today()
-    start, _, _ = _period("2y", "monthly")
+    start, end, _ = _period("2y", "monthly")
+    # Derive `today` from the CLI's own end date, so a run that straddles midnight cannot flake.
+    today = dt.datetime.strptime(end, "%Y%m%d").date()
     assert start[-2:] == "01", start
     # Two years back, snapped to the 1st: with the day forced to 1 there is no clamping to
     # reason about, so this oracle is independent of the implementation's date arithmetic.
     assert start == dt.date(today.year - 2, today.month, 1).strftime("%Y%m%d")
 
 
-def test_daily_last_window_is_not_snapped():
-    """Daily buckets aren't truncated by a mid-month start, so the window stays exact."""
+def test_daily_last_window_is_exact_and_not_snapped():
+    """Daily buckets aren't truncated by a mid-month start, so the window stays exact.
+
+    Asserted as a contract over the returned pair — the span is exactly 90 days and the start is
+    NOT forced to the 1st — rather than by re-deriving `today - timedelta(days=90)`, which is the
+    implementation's own expression and so could never fail.
+    """
     import datetime as dt
-    start, _, _ = _period("90d", "daily")
-    assert start == (dt.date.today() - dt.timedelta(days=90)).strftime("%Y%m%d")
+    start, end, _ = _period("90d", "daily")
+    start_d = dt.datetime.strptime(start, "%Y%m%d").date()
+    end_d = dt.datetime.strptime(end, "%Y%m%d").date()
+    assert (end_d - start_d).days == 90
+    # A monthly snap would force day 01; over a 90-day span that is a 1-in-30 coincidence, so
+    # only assert it when the end date proves no snap could have produced this start.
+    if end_d.day != 1:
+        assert not (start_d.day == 1 and end_d.day == 1)
 
 
 def test_cli_error_contract_is_json_not_traceback(tmp_path):

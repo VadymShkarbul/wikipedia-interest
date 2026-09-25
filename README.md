@@ -31,9 +31,9 @@ wikipedia-interest/        # the skill (self-contained, this is what you ship)
 ├── INSTALL.md             # install into Claude Code / Codex
 ├── scripts/               # wikipop.py CLI + series / wiki_api / analysis / reporting
 ├── references/            # API.md, METHODOLOGY.md
-└── examples.md
-evals/                     # offline deterministic eval suite (dev only)
-verify/                    # cheap-model end-to-end harness (dev only)
+├── examples.md
+├── evals/                 # offline deterministic eval suite (dev only)
+└── verify/                # cheap-model end-to-end harness (dev only)
 pes_task.md                # the original task brief
 ```
 
@@ -82,19 +82,32 @@ Full instructions are in [`wikipedia-interest/INSTALL.md`](wikipedia-interest/IN
 
 ```bash
 uv sync --group dev
-uv run pytest evals/          # offline and deterministic
+uv run pytest                 # offline and deterministic
 ```
 
 The eval suite covers analysis correctness against hand-checked cases, the confidence rules
-individually, the report's trust guarantee, and a CLI golden replayed against recorded fixtures
-under `python3 -I -S` — which is also what proves the skill imports nothing outside the standard
-library. Only `evals/fixtures/record.py` touches the network.
+individually, the report's trust guarantee, the `Series` type, the cache and retry policy, and a CLI
+golden replayed against recorded fixtures under `python3 -I -S` — which is also what proves the skill
+imports nothing outside the standard library. Only `wikipedia-interest/evals/fixtures/record.py`
+touches the network.
 
-Cheap-model end-to-end check (live, needs an OpenRouter key):
+Both dev trees live *inside* `wikipedia-interest/` so that all of the project's own code sits in the
+skill directory, as the brief requires. Neither is loaded when an agent uses the skill.
+
+Cheap-model end-to-end check (live, needs an OpenRouter key). It drives a small model through
+`SKILL.md` and one CLI-only tool, then inspects the report it produced — per-edition trust lines,
+model-written findings, the A4 rule:
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
-uv run verify/e2e_openrouter.py
+uv run wikipedia-interest/verify/e2e_openrouter.py
+```
+
+Any tool-capable model works; the default is a cheap one. The brief names Claude Haiku 4.5, and free
+OpenRouter models are explicitly allowed — pick one with `OPENROUTER_MODEL`:
+
+```bash
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5 uv run wikipedia-interest/verify/e2e_openrouter.py
 ```
 
 ## License

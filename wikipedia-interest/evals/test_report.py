@@ -15,15 +15,20 @@ import pytest
 
 import analysis
 import reporting
-from conftest import monthly
+from helpers import monthly
 
 
-def _series_entry(lang, title, views, found=True, share=None):
-    """Build one series entry shaped like wikipop._build_series output (incl. the live data)."""
+def _series_entry(lang, title, views, found=True, share=None, **overrides):
+    """Build one series entry shaped like wikipop._build_series output (incl. the live data).
+
+    `overrides` patches the computed metrics, so a test can reach a branch that real 24-month
+    synthetic data never lands on (growth basis, an `inf` growth, an article with no data).
+    """
     if not found:
         return {"lang": lang, "title": None, "found": False, "metrics": {"available": False}}
     data = monthly(views)
     metrics = analysis.analyze_series(data, share=share)
+    metrics.update(overrides)
     return {"lang": lang, "title": title, "found": True, "data": data, "metrics": metrics}
 
 
@@ -47,10 +52,47 @@ def test_trust_block_carries_the_leading_reason():
 
 
 def test_trust_block_quotes_the_number_the_basis_names():
-    """direction_basis says which number backs the verdict; the report must not quote the other."""
+    """direction_basis says which number backs the verdict; the report must not quote the other.
+
+    Both halves are asserted. `growth_pct` compares different calendar months, so on a seasonal
+    topic it invents a trend — quoting it under a yoy verdict is the specific error this prevents.
+    """
     entry = _series_entry("uk", "A", list(range(300, 300 + 24 * 10, 10)))
     assert entry["metrics"]["direction_basis"] == "yoy"
-    assert "year-over-year" in reporting.trust_block([entry])[0]
+    yoy_line = reporting.trust_block([entry])[0]
+    assert "year-over-year" in yoy_line
+    assert "over the period" not in yoy_line
+
+    short = _series_entry("uk", "A", [100, 140, 190, 260, 350, 470],
+                          direction_basis="growth", growth_pct=61.2)
+    growth_line = reporting.trust_block([short])[0]
+    assert "+61% over the period" in growth_line
+    assert "year-over-year" not in growth_line
+
+
+@pytest.mark.parametrize("growth_pct,expected", [
+    ("inf", "from a near-zero baseline"),
+    (None, "change unclear"),
+])
+def test_trust_block_describes_an_unquotable_growth_in_words(growth_pct, expected):
+    """A percentage off a zero base is meaningless and `None` is not a number.
+
+    The report must say so in words rather than print `inf%` or `None%` at a reader.
+    """
+    entry = _series_entry("uk", "A", [0] * 6, direction_basis="growth", growth_pct=growth_pct)
+    line = reporting.trust_block([entry])[0]
+    assert expected in line
+    assert "inf" not in line.replace("confidence", "") and "None" not in line
+
+
+def test_trust_block_distinguishes_an_empty_article_from_a_missing_one():
+    """'article exists but has no pageviews here' is a different finding from 'no article'."""
+    present_but_empty = {"lang": "cs", "title": "Astronomie", "found": True,
+                         "metrics": {"available": False}}
+    line = reporting.trust_block([present_but_empty])[0]
+    assert "article exists but no pageview data in range" in line
+    assert "Astronomie" in line
+    assert "coverage gap" not in line
 
 
 def test_trust_block_flags_coverage_gap():
@@ -188,3 +230,27 @@ def test_build_report_handles_gap_only_without_crashing(tmp_path):
     reporting.build_report("nothing", "last 2y", [_series_entry("xx", None, [], found=False)], str(out))
     text = out.read_text(encoding="utf-8")
     assert "no data" in text and "coverage gap" in text
+
+
+# --- one-pageness (a proxy, deliberately) ------------------------------------
+
+@pytest.mark.parametrize("n_editions", [2, 6])
+def test_report_declares_a4_and_holds_exactly_one_page_container(tmp_path, n_editions):
+    """A structural stand-in for the page-count check that left with the PDF renderer.
+
+    v1 opened the PDF and asserted `len(PdfReader(...).pages) == 1`. The browser now makes the
+    PDF, so nothing here can see the paginated result. This asserts only what the file itself
+    can prove: the A4 page rule is declared and the document is a single `.page` block.
+
+    It CANNOT prove the content fits on that page — overflow onto a second sheet would still
+    pass. Proving that needs a renderer, which is exactly the dependency this branch declines to
+    ship. Do not reword this test as if it guarantees one page.
+    """
+    entries = [_series_entry(f"l{i}", f"T{i}", list(range(300, 300 + 24 * 10, 10)))
+               for i in range(n_editions)]
+    out = tmp_path / "r.html"
+    reporting.build_report("t", "last 2y", entries, str(out))
+    text = out.read_text(encoding="utf-8")
+
+    assert "@page { size: A4 portrait;" in text
+    assert text.count('<div class="page">') == 1
