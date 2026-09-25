@@ -21,13 +21,14 @@ wikipedia-interest/          # THE SKILL — self-contained, portable, this is w
 ├── SKILL.md                 # metadata + agent workflow (the model's entry point)
 ├── INSTALL.md               # install into Claude Code / Codex
 ├── scripts/
-│   ├── wikipop.py           # agent-facing CLI (argparse); the only entry point
-│   ├── wiki_api.py          # data layer: title resolution + pageview fetch + on-disk cache
+│   ├── wikipop.py           # agent-facing CLI (argparse); the stdlib-only entry point
+│   ├── series.py            # Series(dates, views) — the one data structure; replaces DataFrame
+│   ├── wiki_api.py          # data layer: title resolution + pageview fetch + on-disk cache (urllib)
 │   ├── analysis.py          # pure stats: growth/trend/seasonality/anomalies/confidence
-│   └── reporting.py         # matplotlib -> one-page PDF + PNG
+│   └── reporting.py         # stdlib -> self-contained HTML + inline SVG (browsers print it to PDF)
 ├── references/              # API.md (endpoints), METHODOLOGY.md (how stats are computed)
 ├── examples.md              # canonical questions -> exact commands
-└── requirements.txt         # deps for pip users
+└── requirements.txt         # states that there are none
 verify/e2e_openrouter.py     # dev-only cheap-model E2E harness (NOT part of the skill)
 pes_task.md                  # original task brief (Ukrainian)
 pyproject.toml / uv.lock     # repo dev environment (uv)
@@ -35,18 +36,19 @@ pyproject.toml / uv.lock     # repo dev environment (uv)
 
 ## Running things
 
-This project uses **uv**. `scripts/wikipop.py` also carries PEP 723 inline deps, so `uv run` works
-standalone without a synced venv.
+The skill has **no runtime dependencies at all** — `resolve`, `analyze` and the HTML report run on
+the Python 3.12 standard library. uv is only for development (the eval suite).
 
 ```bash
-uv sync                                          # set up the dev environment
-# CLI (run from repo root during dev):
-uv run wikipedia-interest/scripts/wikipop.py analyze --topic "astronomy" --langs uk --last 2y
+uv sync --group dev                              # dev environment (pytest)
+# CLI (run from repo root during dev) — plain python3 is enough:
+python3 wikipedia-interest/scripts/wikipop.py analyze --topic "astronomy" --langs uk --last 2y
 ```
 
-The CLI has four commands: `resolve`, `analyze`, `report`, `pageviews`. See
-[README.md](README.md) and [wikipedia-interest/examples.md](wikipedia-interest/examples.md) for
-the full command surface (`--qid`, `--normalize`, `--check-bots`, `--granularity`, etc.).
+The CLI is the skill's only front door, with four commands: `resolve`, `analyze`, `report`,
+`pageviews`. See [README.md](README.md) and
+[wikipedia-interest/examples.md](wikipedia-interest/examples.md) for the full command surface
+(`--qid`, `--normalize`, `--check-bots`, `--granularity`, etc.).
 
 Verify changes three ways:
 1. **Offline eval suite** (fast, deterministic, no network) — the primary check:
@@ -55,7 +57,8 @@ Verify changes three ways:
    uv run pytest evals/
    ```
    Covers analysis correctness, trust judgments, report quality, and an end-to-end CLI golden
-   against recorded fixtures. See [evals/README.md](evals/README.md); refresh fixtures with
+   against recorded fixtures — replayed under `python3 -I -S`, which is what enforces the
+   dependency-free invariant. See [evals/README.md](evals/README.md); refresh fixtures with
    `uv run evals/fixtures/record.py` (the only network-touching part).
 2. Run the CLI directly and inspect the JSON.
 3. The end-to-end cheap-model harness (live; needs an OpenRouter key):
@@ -69,13 +72,25 @@ Verify changes three ways:
 - **The CLI is a JSON API.** Every command prints exactly one JSON object to stdout. Errors are
   JSON too (`{"error": ...}`), never tracebacks — use `_fail(...)` / `_emit(...)` in `wikipop.py`.
   Anything printed to stdout that isn't the JSON object will break the agent parsing it.
-- **Module boundaries:** `wiki_api.py` = all network + caching (no printing/argparse);
-  `analysis.py` = pure functions over a `DataFrame(date, views)` (no I/O); `reporting.py` =
-  rendering only; `wikipop.py` = argparse + orchestration + JSON. Keep new logic in the layer it
-  belongs to.
+- **Module boundaries:** `series.py` = the `Series(dates, views)` data type (no I/O, no imports);
+  `wiki_api.py` = all network + caching (no printing/argparse); `analysis.py` = pure functions over a
+  `Series` (no I/O); `reporting.py` = rendering only; `wikipop.py` = argparse + orchestration +
+  JSON. Keep new logic in the layer it belongs to.
+- **The skill stays dependency-free.** `series`, `wiki_api`, `analysis` and `reporting` must import
+  nothing outside the standard library — that is the install story, and `evals` enforce it by running
+  the CLI under `python3 -I -S`. Anything heavier (parquet, STL, a chart library, a PDF renderer) does
+  not belong in the skill. The report is HTML precisely so the browser, not this repo, renders the PDF.
+- **One front door.** The skill is `SKILL.md` + its own code in one folder, driven through the CLI —
+  no MCP server, no plugin wrapper, nothing to install. That keeps it a plain Agent Skill, as the
+  brief (`pes_task.md`) asks. If a typed tool surface is ever wanted, it belongs in a separate
+  branch, not here.
 - **Confidence is a first-class output.** Analysis emits a `confidence` label + reasons; the whole
   point is that the tool judges trustworthiness so the model doesn't have to. Preserve this when
   changing metrics, and update `references/METHODOLOGY.md` if you change how any metric is computed.
+- **The model writes the prose; the code guarantees the caveat.** `build_report` takes the model's
+  `findings` narrative, but `reporting.trust_block()` appends the confidence label and leading reason
+  per edition unconditionally — a report is shared detached from the conversation, so the caveat must
+  travel in the file. Never make that block optional or model-supplied.
 - **Partial-period trimming:** the latest incomplete period is dropped (`trim_partial_tail`) so a
   half-finished month doesn't read as a decline, and a monthly `--last` window is snapped to the 1st
   in `_period` so the *first* bucket isn't truncated either. Both ends matter — don't remove either.
@@ -85,15 +100,16 @@ Verify changes three ways:
   the headline again, and keep `_yoy_pct` monthly-only.
 - **Caching:** network responses cache under `.wikipop_cache/` (gitignored). Repeat/related queries
   are meant to be cheap — don't defeat the cache.
-- **Encoding:** JSON is emitted with `ensure_ascii=False`; the PDF uses DejaVu Sans for Cyrillic /
-  PL / CZ diacritics. Non-Latin topics and titles must keep working.
+- **Encoding:** JSON is emitted with `ensure_ascii=False`; the HTML report declares UTF-8 and writes
+  non-Latin titles literally. Cyrillic and PL/CZ topics must keep working end to end.
 - **Framing:** pageviews measure curiosity, not willingness to pay. Keep that caveat in user-facing
   output; don't overstate what the data proves.
 
 ## Editing the skill
 
 - If you change CLI flags or behavior, update **all** of: `SKILL.md`, `examples.md`, `README.md`,
-  and the relevant `references/*.md`. `SKILL.md` is the model's contract — keep it accurate and
-  concise (a small model reads it every time).
+  `INSTALL.md` and the relevant `references/*.md`. `SKILL.md` is the model's contract — keep it
+  accurate and concise (a small model reads it every time); every command it shows must be one the
+  CLI actually accepts.
 - Keep the skill folder self-contained and portable — no absolute paths, no repo-specific assumptions.
-- Don't commit runtime artifacts (`report.pdf/png`, `.wikipop_cache/`) — already gitignored.
+- Don't commit runtime artifacts (`report.html`, `.wikipop_cache/`) — already gitignored.

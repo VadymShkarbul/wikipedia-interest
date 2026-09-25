@@ -4,11 +4,12 @@ The evals are deterministic and offline. They import the skill's own modules dir
 (`analysis`, `wiki_api`, `reporting`) and assert on their real outputs — no math is
 re-implemented here. Network is replaced by two fixture mechanisms:
 
-  * synthetic pandas Series/DataFrames built in-process (Tracks A & C), and
+  * synthetic Series objects built in-process (Tracks A & C), and
   * a warmed on-disk cache the skill's own cache layer reads from (Tracks B & D).
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import shutil
@@ -16,7 +17,6 @@ import sys
 import time
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
@@ -28,17 +28,28 @@ sys.path.insert(0, str(SCRIPTS))
 
 import analysis  # noqa: E402
 import wiki_api  # noqa: E402
+from series import Series  # noqa: E402
 
 
 # --- synthetic series builders ----------------------------------------------
 
-def monthly(views, start="2022-01-01") -> pd.DataFrame:
-    """Build a monthly DataFrame(date, views) from a list of view counts."""
-    dates = pd.date_range(start=start, periods=len(views), freq="MS")
-    return pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
+
+def _month_starts(n, start="2022-01-01"):
+    """n consecutive first-of-month dates beginning at `start`."""
+    y, m = int(start[:4]), int(start[5:7])
+    out = []
+    for _ in range(n):
+        out.append(dt.date(y, m, 1))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
 
 
-def ramp(n, lo, hi, start="2022-01-01") -> pd.DataFrame:
+def monthly(views, start="2022-01-01") -> Series:
+    """Build a monthly Series(dates, views) from a list of view counts."""
+    return Series(_month_starts(len(views), start), [int(v) for v in views])
+
+
+def ramp(n, lo, hi, start="2022-01-01") -> Series:
     """A clean linear ramp from `lo` to `hi` over n monthly points."""
     step = (hi - lo) / (n - 1) if n > 1 else 0
     return monthly([round(lo + step * i) for i in range(n)], start=start)

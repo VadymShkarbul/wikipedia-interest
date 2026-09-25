@@ -9,15 +9,31 @@ is designed to prove, so the table stays robust to unrelated implementation deta
 """
 from __future__ import annotations
 
-import pandas as pd
+import datetime as dt
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "wikipedia-interest" / "scripts"))
+
+from series import Series
 
 
-def _monthly(views, start="2022-01-01") -> pd.DataFrame:
-    dates = pd.date_range(start=start, periods=len(views), freq="MS")
-    return pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
+
+def _month_starts(n, start="2022-01-01"):
+    """n consecutive first-of-month dates beginning at `start`."""
+    y, m = int(start[:4]), int(start[5:7])
+    out = []
+    for _ in range(n):
+        out.append(dt.date(y, m, 1))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
 
 
-def _ramp(n, lo, hi, start="2022-01-01") -> pd.DataFrame:
+def _monthly(views, start="2022-01-01") -> Series:
+    return Series(_month_starts(len(views), start), [int(v) for v in views])
+
+
+def _ramp(n, lo, hi, start="2022-01-01") -> Series:
     step = (hi - lo) / (n - 1) if n > 1 else 0
     return _monthly([round(lo + step * i) for i in range(n)], start=start)
 
@@ -54,15 +70,15 @@ def _seasonal_flat():
 
 def _ramp_with_spike():
     """A gentle ramp (so MAD > 0) with one obvious spike at Oct 2022 (index 9)."""
-    df = _ramp(19, 200, 500)
-    df.loc[9, "views"] = 6000
-    return df
+    s = _ramp(19, 200, 500)
+    s.views[9] = 6000
+    return s
 
 
 CASES = [
     {
         "id": "rising_clean",
-        "df": _ramp(24, 100, 1000),
+        "data": _ramp(24, 100, 1000),
         "expect": {
             "available": True,
             "n_points": 24,
@@ -77,7 +93,7 @@ CASES = [
     },
     {
         "id": "declining_clean",
-        "df": _ramp(24, 1000, 100),
+        "data": _ramp(24, 1000, 100),
         "expect": {
             "direction": "down",
             "growth_pct": lambda v: isinstance(v, (int, float)) and v < -50,
@@ -88,7 +104,7 @@ CASES = [
     },
     {
         "id": "flat",
-        "df": _monthly([500] * 18),
+        "data": _monthly([500] * 18),
         "expect": {
             "direction": "flat",
             "growth_pct": 0.0,
@@ -100,7 +116,7 @@ CASES = [
     },
     {
         "id": "spike_detected",
-        "df": _ramp_with_spike(),
+        "data": _ramp_with_spike(),
         "expect": {
             "available": True,
             "anomaly_count": 1,
@@ -109,7 +125,7 @@ CASES = [
     },
     {
         "id": "inf_growth_from_zero_base",
-        "df": _monthly([0, 0, 0, 100, 150, 200, 250, 300, 350, 400, 450, 500]),
+        "data": _monthly([0, 0, 0, 100, 150, 200, 250, 300, 350, 400, 450, 500]),
         "expect": {
             "growth_pct": "inf",
             "direction": "up",
@@ -117,7 +133,7 @@ CASES = [
     },
     {
         "id": "all_zero",
-        "df": _monthly([0] * 12),
+        "data": _monthly([0] * 12),
         "expect": {
             "growth_pct": None,
             "direction": "n/a",
@@ -127,7 +143,7 @@ CASES = [
     },
     {
         "id": "low_volume",
-        "df": _monthly([20, 30, 25, 35, 40, 30, 45, 20, 30, 35, 40, 25]),
+        "data": _monthly([20, 30, 25, 35, 40, 30, 45, 20, 30, 35, 40, 25]),
         "expect": {
             "confidence.label": "low",
             "confidence.reasons.contains": "Very low traffic",
@@ -135,7 +151,7 @@ CASES = [
     },
     {
         "id": "short_series",
-        "df": _monthly([100, 200, 150, 300, 250]),
+        "data": _monthly([100, 200, 150, 300, 250]),
         "expect": {
             "n_points": 5,
             "yoy_pct": None,
@@ -146,7 +162,7 @@ CASES = [
     },
     {
         "id": "medium_length",
-        "df": _monthly([300, 320, 310, 305, 330, 315, 325, 300, 340, 310]),
+        "data": _monthly([300, 320, 310, 305, 330, 315, 325, 300, 340, 310]),
         "expect": {
             "n_points": 10,
             "yoy_pct": None,
@@ -159,7 +175,7 @@ CASES = [
         # `growth_pct` still reports the (season-driven) window comparison; `direction` must
         # come from the seasonality-safe YoY number instead.
         "id": "seasonal_flat_is_not_declining",
-        "df": _seasonal_flat(),
+        "data": _seasonal_flat(),
         "expect": {
             "direction": "flat",
             "direction_basis": "yoy",
@@ -173,7 +189,7 @@ CASES = [
         # Regression: a clean ramp is a trend, not a season — detrended seasonality keeps the
         # "quote yoy instead" note off a series where month-of-year variation is just the trend.
         "id": "clean_ramp_is_not_seasonal",
-        "df": _ramp(24, 300, 760),
+        "data": _ramp(24, 300, 760),
         "expect": {
             "direction": "up",
             "direction_basis": "yoy",
@@ -184,7 +200,7 @@ CASES = [
     },
     {
         "id": "seasonal_peak_july",
-        "df": _seasonal(),
+        "data": _seasonal(),
         "expect": {
             "seasonality.peak_month": "Jul",
             "seasonality.low_month": "Jan",

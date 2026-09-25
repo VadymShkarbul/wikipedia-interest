@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = [
-#   "requests>=2.31",
-#   "pandas>=2.0",
-#   "numpy>=1.24",
-#   "matplotlib>=3.7",
-# ]
+# dependencies = []   # intentionally empty: this CLI runs on the standard library alone
 # ///
 """wikipop — analyze Wikipedia pageviews as a proxy for audience interest.
 
 Agent-facing CLI. Every command prints ONE JSON object to stdout; errors are JSON too (never
-tracebacks). Run standalone with uv (from the skill directory):  `uv run scripts/wikipop.py <cmd> ...`
+tracebacks). Needs no installed packages at all. From the skill directory:
+  `python3 scripts/wikipop.py <cmd> ...`
 
 Commands:
   resolve    topic + languages -> exact article title per language (flags coverage gaps)
   pageviews  low-level single-article time series (iteration/debug)
   analyze    topic + languages -> metrics + confidence JSON (fast; no files)
-  report     analyze + write a one-page PDF (+PNG)
+  report     analyze + write a shareable one-page HTML report (print to PDF to share)
 """
 from __future__ import annotations
 
 import argparse
 import json
+import calendar
+import datetime as dt
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import pandas as pd  # noqa: E402
 
 import analysis as A  # noqa: E402
 import wiki_api as W  # noqa: E402
@@ -48,27 +44,49 @@ def _parse_langs(s: str) -> list[str]:
     return [x.strip() for x in s.split(",") if x.strip()]
 
 
-def _period(args) -> tuple[str, str, str]:
-    """Resolve (start_YYYYMMDD, end_YYYYMMDD, label) from --last or --start/--end."""
-    if args.start and args.end:
-        return args.start, args.end, f"{args.start}–{args.end}"
-    last = args.last or "2y"
+def _shift_back(d: "dt.date", n: int, unit: str) -> "dt.date":
+    """`d` minus n years/months/days. Day-of-month is clamped (Mar 31 - 1m -> Feb 28/29)."""
+    if unit == "d":
+        return d - dt.timedelta(days=n)
+    months = n * 12 if unit == "y" else n
+    year, month0 = divmod((d.year * 12 + d.month - 1) - months, 12)
+    month = month0 + 1
+    return dt.date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
+def resolve_window(last: "str | None", start: "str | None", end: "str | None",
+                   granularity: str = "monthly") -> tuple[str, str, str]:
+    """(start_YYYYMMDD, end_YYYYMMDD, label) from a `--last`-style window or an explicit range.
+
+    Raises ValueError on a malformed window; callers turn that into their own error shape.
+    """
+    if start and end:
+        return start, end, f"{start}–{end}"
+    last = last or "2y"
     m = re.fullmatch(r"(\d+)\s*([ymd])", last.strip().lower())
     if not m:
-        _fail(f"bad --last '{last}', use e.g. 2y, 24m, 90d")
+        raise ValueError(f"bad window '{last}', use e.g. 2y, 24m, 90d")
     n, unit = int(m.group(1)), m.group(2)
-    end = pd.Timestamp.today().normalize()
-    offset = {"y": pd.DateOffset(years=n), "m": pd.DateOffset(months=n), "d": pd.DateOffset(days=n)}[unit]
-    start = end - offset
+    end = dt.date.today()
+    start = _shift_back(end, n, unit)
     # A monthly window starting mid-month gets a TRUNCATED first bucket back (the API counts only
     # from the start date), which understates the baseline that growth_pct and yoy_pct measure
     # against. Snap to the 1st so `--last 2y` means the last 2 years of *complete* months; the
     # trailing partial month is dropped separately by trim_partial_tail.
-    if getattr(args, "granularity", "monthly") == "monthly":
+    if granularity == "monthly":
         start = start.replace(day=1)
-    if start < pd.Timestamp("2015-07-01"):
-        start = pd.Timestamp("2015-07-01")
+    if start < dt.date(2015, 7, 1):
+        start = dt.date(2015, 7, 1)
     return start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), f"last {last}"
+
+
+def _period(args) -> tuple[str, str, str]:
+    """CLI adapter over resolve_window: turns a bad window into the JSON error contract."""
+    try:
+        return resolve_window(args.last, args.start, args.end,
+                              getattr(args, "granularity", "monthly"))
+    except ValueError as exc:
+        _fail(str(exc))
 
 
 def _build_series(topic, langs, start, end, granularity, access, agent, cache_dir,
@@ -81,37 +99,37 @@ def _build_series(topic, langs, start, end, granularity, access, agent, cache_di
         entry = {
             "lang": lang, "project": W.project_for_lang(lang), "title": info["title"],
             "qid": info["qid"], "found": info["found"], "method": info["method"],
-            "df": None, "dropped": None, "metrics": {"available": False},
+            "data": None, "dropped": None, "metrics": {"available": False},
         }
         if info["found"] and info["title"]:
-            df = W.fetch_pageviews(entry["project"], info["title"], start, end,
-                                   granularity, access, agent, cache_dir)
-            df, dropped = W.trim_partial_tail(df, granularity)
-            entry["df"] = df
+            data = W.fetch_pageviews(entry["project"], info["title"], start, end,
+                                     granularity, access, agent, cache_dir)
+            data, dropped = W.trim_partial_tail(data, granularity)
+            entry["data"] = data
             entry["dropped"] = dropped
 
             share = None
-            if normalize and not df.empty:
+            if normalize and not data.empty:
                 agg = W.fetch_aggregate_pageviews(entry["project"], start, end,
                                                   granularity, access, agent, cache_dir)
-                share = A.share_per_million(df, agg)
+                share = A.share_per_million(data, agg)
 
             bot_share = None
-            if check_bots and not df.empty:
-                all_df = W.fetch_pageviews(entry["project"], info["title"], start, end,
-                                           granularity, access, "all-agents", cache_dir)
-                bot_share = A.bot_share(df, all_df)
+            if check_bots and not data.empty:
+                all_data = W.fetch_pageviews(entry["project"], info["title"], start, end,
+                                             granularity, access, "all-agents", cache_dir)
+                bot_share = A.bot_share(data, all_data)
 
-            entry["metrics"] = A.analyze_series(df, granularity, share=share, bot_share=bot_share)
+            entry["metrics"] = A.analyze_series(data, granularity, share=share, bot_share=bot_share)
         series.append(entry)
     return series, resolved
 
 
 def _series_json(series: list) -> list:
-    """Strip DataFrames for JSON output."""
+    """Strip the raw Series objects for JSON output."""
     out = []
     for s in series:
-        item = {k: v for k, v in s.items() if k != "df"}
+        item = {k: v for k, v in s.items() if k != "data"}
         out.append(item)
     return out
 
@@ -128,19 +146,18 @@ def cmd_pageviews(args):
     project = args.project or (W.project_for_lang(args.lang) if args.lang else None)
     if not project:
         _fail("provide --project or --lang")
-    df = W.fetch_pageviews(project, args.article, args.start, args.end,
-                           args.granularity, args.access, args.agent, args.cache_dir)
+    data = W.fetch_pageviews(project, args.article, args.start, args.end,
+                             args.granularity, args.access, args.agent, args.cache_dir)
     if not args.keep_partial:
-        df, dropped = W.trim_partial_tail(df, args.granularity)
+        data, dropped = W.trim_partial_tail(data, args.granularity)
     else:
         dropped = None
     _emit({
         "project": project, "article": args.article,
         "granularity": args.granularity, "access": args.access, "agent": args.agent,
         "dropped_partial": dropped,
-        "series": [{"date": d.strftime("%Y-%m-%d"), "views": int(v)}
-                   for d, v in zip(df["date"], df["views"])],
-        "metrics": A.analyze_series(df, args.granularity),
+        "series": data.to_records(),
+        "metrics": A.analyze_series(data, args.granularity),
     })
 
 
@@ -157,14 +174,15 @@ def cmd_analyze(args):
 
 
 def cmd_report(args):
-    import reporting as R  # imported lazily so resolve/analyze stay light
+    import reporting as R  # stdlib-only HTML/SVG renderer
     langs = _parse_langs(args.langs)
     start, end, label = _period(args)
     series, resolved = _build_series(args.topic, langs, start, end, args.granularity,
                                      args.access, args.agent, args.cache_dir,
                                      qid=args.qid, normalize=args.normalize, check_bots=args.check_bots)
-    out = args.out or "report.pdf"
-    files = R.build_report(args.topic, label, series, out, note=args.note, normalized=args.normalize)
+    out = args.out or "report.html"
+    files = R.build_report(args.topic, label, series, out,
+                           findings=args.findings, normalized=args.normalize)
     _emit({"topic": args.topic, "qid": resolved["qid"], "candidates": resolved["candidates"],
            "period": label, "start": start, "end": end,
            "files": files, "series": _series_json(series)})
@@ -210,13 +228,14 @@ def build_parser() -> argparse.ArgumentParser:
     sa.add_argument("--start"); sa.add_argument("--end")
     common(sa); concept(sa); sa.set_defaults(func=cmd_analyze)
 
-    srp = sub.add_parser("report", help="analyze + one-page PDF")
+    srp = sub.add_parser("report", help="analyze + a shareable one-pager")
     srp.add_argument("--topic", required=True)
     srp.add_argument("--langs", required=True)
     srp.add_argument("--last", help="e.g. 2y, 24m, 90d (default 2y)")
     srp.add_argument("--start"); srp.add_argument("--end")
-    srp.add_argument("--out", help="output PDF path (default report.pdf)")
-    srp.add_argument("--note", help="override the auto findings text")
+    srp.add_argument("--out", help="output path for the HTML one-pager (default report.html)")
+    srp.add_argument("--findings", help="YOUR narrative for the report's Findings section. "
+                                        "Confidence caveats are appended automatically.")
     common(srp); concept(srp); srp.set_defaults(func=cmd_report)
     return p
 
