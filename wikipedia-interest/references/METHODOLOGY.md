@@ -83,8 +83,11 @@ the very baseline `growth_pct` and `yoy_pct` are measured against.
 
 ## Growing the skill (iterative roadmap)
 Delivered so far: multi-language resolution + candidate disambiguation (`--qid`), share-of-attention
-normalization (`--normalize`), bot-inflation diagnostic (`--check-bots`), seasonality note. Still ahead,
-in rough order of value:
+normalization (`--normalize`), bot-inflation diagnostic (`--check-bots`), seasonality note. In v2 the
+analysis engine dropped pandas/numpy/requests for the standard library, the report became
+self-contained HTML with inline SVG (no renderer dependency at all — browsers print it to PDF), and
+the narrative moved to the model while the confidence caveat stayed in code. Still ahead, in rough
+order of value:
 
 1. **Topic discovery.** Use the `top` endpoint + Wikidata categories to *suggest* rising topics, not
    just analyze given ones. Add a `discover` command.
@@ -99,5 +102,7 @@ in rough order of value:
    recommendation rests on more than pageviews.
 6. **Report polish.** Themable templates, per-language small multiples, and an executive summary block.
 
-Each step is additive: the CLI contract (JSON in/out, subcommands) stays stable so the agent workflow
-doesn't change as capabilities grow.
+Each step is additive: the CLI's JSON in/out stays stable, so the agent workflow doesn't change as
+capabilities grow. Note the constraint v2 introduces — the core must keep running on the standard
+library alone, so step 2's parquet/sqlite store and step 3's STL belong behind an optional extra
+that a plain install never pulls in.

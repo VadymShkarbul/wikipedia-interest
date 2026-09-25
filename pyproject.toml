@@ -1,21 +1,19 @@
 [project]
 name = "ai-pes"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
-dependencies = [
-    "matplotlib>=3.11.2",
-    "numpy>=2.5.3",
-    "pandas>=3.0.6",
-    "requests>=2.34.2",
-]
+# Intentionally empty: the skill runs on the Python standard library alone. Nothing here, and
+# nothing in wikipedia-interest/scripts/, may add a runtime dependency — the evals enforce
+# it by running the CLI under `python3 -I -S`.
+dependencies = []
 
 [dependency-groups]
-# Dev-only tools for the offline evaluation suite (evals/). Not part of the shipped skill.
+# Dev-only tools for the offline eval suite (wikipedia-interest/evals/). The suite ships inside
+# the skill folder but is never loaded at runtime; the skill itself needs nothing.
 dev = [
     "pytest>=8.0",
-    "pypdf>=4.0",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["evals"]
+testpaths = ["wikipedia-interest/evals"]
 addopts = "-q"

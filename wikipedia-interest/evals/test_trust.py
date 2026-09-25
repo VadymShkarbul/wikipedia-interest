@@ -6,21 +6,30 @@ entries (the skill's real cache layer reads them as hits) so it runs offline and
 """
 from __future__ import annotations
 
-import pandas as pd
+import datetime as dt
+
 import pytest
 
 import analysis
 import wiki_api
+from helpers import monthly as _mk_monthly
+from series import Series
 
 
 def _monthly(views, start="2020-01-01"):
-    dates = pd.date_range(start=start, periods=len(views), freq="MS")
-    return pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
+    return _mk_monthly(views, start=start)
+
+
+def _without(s, idxs):
+    """Series with the given positions removed — used to punch coverage holes."""
+    keep = [i for i in range(len(s)) if i not in set(idxs)]
+    return Series([s.dates[i] for i in keep], [s.views[i] for i in keep])
 
 
 def _daily(views, start="2024-01-01"):
-    dates = pd.date_range(start=start, periods=len(views), freq="D")
-    return pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
+    first = dt.date(int(start[:4]), int(start[5:7]), int(start[8:10]))
+    return Series([first + dt.timedelta(days=i) for i in range(len(views))],
+                  [int(v) for v in views])
 
 
 # A noisy, trendless series: R² is ~0 and the first/last windows have the same median, so the
@@ -53,7 +62,7 @@ def test_confidence_rule(cid, views, label, reason):
 def test_missing_periods_cap_confidence_to_medium():
     # A gap in the monthly index -> expected_points > n_points -> "missing period(s)" reason.
     df = _monthly([500] * 12)
-    df = df.drop(index=[4, 5]).reset_index(drop=True)  # remove two interior months
+    df = _without(df, [4, 5])  # remove two interior months
     m = analysis.analyze_series(df)
     assert m["missing_points"] >= 1
     assert m["confidence"]["label"] in ("medium", "low")
@@ -100,8 +109,8 @@ def test_daily_series_never_claims_a_year_over_year_basis():
 def test_daily_absent_days_are_not_treated_as_coverage_gaps():
     """The API omits zero-traffic days; a handful of those is not a coverage problem."""
     df = _daily([5] * 90)
-    few = df.drop(index=[10, 20, 30]).reset_index(drop=True)          # 3/90 absent
-    many = df.drop(index=list(range(10, 40))).reset_index(drop=True)  # 30/90 absent
+    few = _without(df, [10, 20, 30])                                  # 3/90 absent
+    many = _without(df, range(10, 40))                                # 30/90 absent
     m_few = analysis.analyze_series(few, granularity="daily")
     m_many = analysis.analyze_series(many, granularity="daily")
     assert m_few["missing_points"] == 3

@@ -4,7 +4,7 @@ The evals are deterministic and offline. They import the skill's own modules dir
 (`analysis`, `wiki_api`, `reporting`) and assert on their real outputs — no math is
 re-implemented here. Network is replaced by two fixture mechanisms:
 
-  * synthetic pandas Series/DataFrames built in-process (Tracks A & C), and
+  * synthetic Series objects built in-process (Tracks A & C), and
   * a warmed on-disk cache the skill's own cache layer reads from (Tracks B & D).
 """
 from __future__ import annotations
@@ -16,42 +16,21 @@ import sys
 import time
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPTS = REPO / "wikipedia-interest" / "scripts"
+SKILL = Path(__file__).resolve().parent.parent
+SCRIPTS = SKILL / "scripts"
 FIXTURE_CACHE = Path(__file__).resolve().parent / "fixtures" / "cache"
 
 # Make the skill's modules importable exactly as the CLI does (scripts/ on sys.path).
 sys.path.insert(0, str(SCRIPTS))
 
-import analysis  # noqa: E402
 import wiki_api  # noqa: E402
 
 
 # --- synthetic series builders ----------------------------------------------
-
-def monthly(views, start="2022-01-01") -> pd.DataFrame:
-    """Build a monthly DataFrame(date, views) from a list of view counts."""
-    dates = pd.date_range(start=start, periods=len(views), freq="MS")
-    return pd.DataFrame({"date": dates, "views": [int(v) for v in views]})
-
-
-def ramp(n, lo, hi, start="2022-01-01") -> pd.DataFrame:
-    """A clean linear ramp from `lo` to `hi` over n monthly points."""
-    step = (hi - lo) / (n - 1) if n > 1 else 0
-    return monthly([round(lo + step * i) for i in range(n)], start=start)
-
-
-@pytest.fixture
-def mk_monthly():
-    return monthly
-
-
-@pytest.fixture
-def mk_ramp():
-    return ramp
+# Defined in helpers.py so cases/analysis_cases.py (a plain module) can share them.
+from helpers import month_starts, monthly, ramp  # noqa: E402,F401
 
 
 # --- cache helpers (offline network replacement) ----------------------------

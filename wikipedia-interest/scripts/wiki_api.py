@@ -1,19 +1,23 @@
 """Wikimedia data access: article-title resolution + pageview retrieval, with an on-disk cache.
 
-Pure data layer used by the CLI (wikipop.py). No printing, no argument parsing here.
-All network access goes through a single retrying session with a descriptive User-Agent.
+Pure data layer used by the CLI (wikipop.py). No printing, no argument parsing.
+All network access goes through one retrying helper with the policy-required User-Agent, on the
+standard library only — the four GETs this module makes do not justify a dependency.
 """
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
+from statistics import median
 from typing import Optional
 
-import pandas as pd
-import requests
+from series import Series
 
 # --- constants ---------------------------------------------------------------
 
@@ -27,7 +31,13 @@ AGGREGATE_URL = (
 )
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 DATA_START = "20150701"  # Wikimedia pageview history begins here
-DEFAULT_CACHE_DIR = ".wikipop_cache"
+# Cache next to this module, not in the caller's cwd: the agent's working directory is not ours
+# to litter, and it varies between clients. Override with --cache-dir, the cache_dir argument, or
+# WIKIPOP_CACHE_DIR for callers that can set an environment but not a flag.
+DEFAULT_CACHE_DIR = os.environ.get(
+    "WIKIPOP_CACHE_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".wikipop_cache"),
+)
 # A descriptive UA is required by the Wikimedia API policy. Override via env if desired.
 USER_AGENT = os.environ.get(
     "WIKI_UA",
@@ -42,21 +52,29 @@ class WikiError(Exception):
 
 # --- HTTP + cache ------------------------------------------------------------
 
-_session: Optional[requests.Session] = None
-
-
-def get_session() -> requests.Session:
-    global _session
-    if _session is None:
-        s = requests.Session()
-        s.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
-        _session = s
-    return _session
-
-
 def _cache_key(url: str, params: Optional[dict]) -> str:
     raw = url + "?" + urllib.parse.urlencode(sorted((params or {}).items()))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _request(url: str, params: Optional[dict]) -> tuple[int, Optional[dict]]:
+    """One GET. Returns (status, parsed_json_or_None); 4xx/5xx come back rather than raising.
+
+    Transport-level failures (DNS, timeout, reset) propagate so the caller can retry them.
+    """
+    full = url + ("?" + urllib.parse.urlencode(params) if params else "")
+    req = urllib.request.Request(
+        full, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            status, raw = resp.status, resp.read()
+    except urllib.error.HTTPError as exc:  # 404 etc. are answers, not failures
+        status, raw = exc.code, exc.read()
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        body = None
+    return status, body
 
 
 def _get_json(
@@ -86,19 +104,14 @@ def _get_json(
     last_exc = None
     for attempt in range(3):
         try:
-            resp = get_session().get(url, params=params, timeout=TIMEOUT)
-            body = None
-            try:
-                body = resp.json()
-            except ValueError:
-                body = None
-            if resp.status_code in ok_statuses or resp.status_code == 404:
+            status, body = _request(url, params)
+            if status in ok_statuses or status == 404:
                 with open(path, "w", encoding="utf-8") as fh:
-                    json.dump({"status": resp.status_code, "body": body}, fh)
-                return resp.status_code, body
+                    json.dump({"status": status, "body": body}, fh)
+                return status, body
             # transient (429/5xx) -> back off and retry
-            last_exc = WikiError(f"HTTP {resp.status_code} for {url}")
-        except requests.RequestException as exc:
+            last_exc = WikiError(f"HTTP {status} for {url}")
+        except (urllib.error.URLError, OSError) as exc:
             last_exc = exc
         time.sleep(1.5 * (attempt + 1))
     raise WikiError(f"Request failed after retries: {last_exc}")
@@ -244,6 +257,17 @@ def project_for_lang(lang: str) -> str:
     return lang if "." in lang else f"{lang}.wikipedia"
 
 
+def _series_from_items(body: Optional[dict]) -> Series:
+    """Wikimedia `items` payload -> Series, sorted by date."""
+    if not body or "items" not in body:
+        return Series()
+    dates, views = [], []
+    for it in body["items"]:
+        dates.append(dt.datetime.strptime(it["timestamp"][:8], "%Y%m%d").date())
+        views.append(int(it["views"]))
+    return Series(dates, views).sorted_by_date()
+
+
 def fetch_pageviews(
     project: str,
     article: str,
@@ -253,10 +277,10 @@ def fetch_pageviews(
     access: str = "all-access",
     agent: str = "user",
     cache_dir: str = DEFAULT_CACHE_DIR,
-) -> pd.DataFrame:
-    """Fetch a pageview time series. Returns DataFrame(date: Timestamp, views: int).
+) -> Series:
+    """Fetch a pageview time series. Returns Series(dates: date, views: int).
 
-    `start`/`end` are YYYYMMDD. Missing article or empty range -> empty DataFrame (not an error),
+    `start`/`end` are YYYYMMDD. Missing article or empty range -> empty Series (not an error),
     so callers can report "no coverage" rather than crash.
     """
     if not article:
@@ -272,17 +296,9 @@ def fetch_pageviews(
         end=f"{end}00",
     )
     status, body = _get_json(url, None, cache_dir)
-    if status == 404 or not body or "items" not in body:
-        return pd.DataFrame(columns=["date", "views"])
-
-    rows = [
-        {"date": pd.to_datetime(it["timestamp"][:8], format="%Y%m%d"), "views": int(it["views"])}
-        for it in body["items"]
-    ]
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        df = df.sort_values("date").reset_index(drop=True)
-    return df
+    if status == 404:
+        return Series()
+    return _series_from_items(body)
 
 
 def fetch_aggregate_pageviews(
@@ -293,8 +309,8 @@ def fetch_aggregate_pageviews(
     access: str = "all-access",
     agent: str = "user",
     cache_dir: str = DEFAULT_CACHE_DIR,
-) -> pd.DataFrame:
-    """Fetch the WHOLE edition's total pageviews per period. Returns DataFrame(date, total_views).
+) -> Series:
+    """Fetch the WHOLE edition's total pageviews per period. Returns Series(dates, views=totals).
 
     Used to normalize an article's views into a share-of-attention, so editions of very different
     sizes compare fairly. Cached per project/range and shared across topics -> cheap.
@@ -304,19 +320,12 @@ def fetch_aggregate_pageviews(
         granularity=granularity, start=f"{start}00", end=f"{end}00",
     )
     status, body = _get_json(url, None, cache_dir)
-    if status == 404 or not body or "items" not in body:
-        return pd.DataFrame(columns=["date", "total_views"])
-    rows = [
-        {"date": pd.to_datetime(it["timestamp"][:8], format="%Y%m%d"), "total_views": int(it["views"])}
-        for it in body["items"]
-    ]
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        df = df.sort_values("date").reset_index(drop=True)
-    return df
+    if status == 404:
+        return Series()
+    return _series_from_items(body)
 
 
-def trim_partial_tail(df: pd.DataFrame, granularity: str = "monthly") -> tuple:
+def trim_partial_tail(s: Series, granularity: str = "monthly") -> tuple:
     """Drop a trailing incomplete period. Wikimedia's latest month/day is usually partial and,
     if kept, badly skews growth and the 'latest' figure.
 
@@ -326,20 +335,20 @@ def trim_partial_tail(df: pd.DataFrame, granularity: str = "monthly") -> tuple:
         signature of a partial month.
       * daily: same idea against the preceding up-to-14 days.
     """
-    if df is None or len(df) < 3:
-        return df, None
+    if s is None or len(s) < 3:
+        return s, None
 
-    last_date = df["date"].iloc[-1]
-    last_val = float(df["views"].iloc[-1])
+    last_date = s.dates[-1]
+    last_val = float(s.views[-1])
     lookback = 6 if granularity == "monthly" else 14
-    prior = df["views"].iloc[-(lookback + 1):-1]
-    prior_med = float(prior.median()) if len(prior) else 0.0
+    prior = s.views[-(lookback + 1):-1]
+    prior_med = float(median(prior)) if prior else 0.0
 
-    now = pd.Timestamp.now()
+    today = dt.date.today()
     same_period = (
-        (last_date.year == now.year and last_date.month == now.month)
+        (last_date.year == today.year and last_date.month == today.month)
         if granularity == "monthly"
-        else last_date.date() == now.date()
+        else last_date == today
     )
     far_below = prior_med > 0 and last_val < 0.25 * prior_med
 
@@ -349,5 +358,5 @@ def trim_partial_tail(df: pd.DataFrame, granularity: str = "monthly") -> tuple:
             "views": int(last_val),
             "reason": "current-period" if same_period else "far-below-recent-levels",
         }
-        return df.iloc[:-1].reset_index(drop=True), dropped
-    return df, None
+        return s.drop_last(), dropped
+    return s, None
